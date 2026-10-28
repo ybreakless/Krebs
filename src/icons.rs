@@ -1,13 +1,15 @@
 use iced::widget::svg::{Handle, Svg};
 use iced::Color;
 
-pub fn render_svg_icon<'a>(svg_bytes: &'static [u8], size: u16, color: Color) -> Svg<'a, iced::Theme> {
+pub fn render_svg_icon<'a>(
+    svg_bytes: &'static [u8],
+    size: u16,
+    color: Color,
+) -> Svg<'a, iced::Theme> {
     iced::widget::svg(Handle::from_memory(svg_bytes))
         .width(size)
         .height(size)
-        .style(move |_theme, _status| iced::widget::svg::Style {
-            color: Some(color),
-        })
+        .style(move |_theme, _status| iced::widget::svg::Style { color: Some(color) })
 }
 
 // 1. Write Studio Icon (Drafting Pencil)
@@ -51,6 +53,9 @@ pub const SVG_TIMER: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox
 
 // 14. Quick Tour / Guide Icon (Sparkle / Compass)
 pub const SVG_TOUR: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>"#;
+
+// 13b. Language / Globe Icon
+pub const SVG_GLOBE: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15.3 15.3 0 0 1 4 9 15.3 15.3 0 0 1-4 9 15.3 15.3 0 0 1-4-9 15.3 15.3 0 0 1 4-9z"/></svg>"#;
 
 // 15. Help Icon (Question Mark)
 pub const SVG_HELP: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>"#;

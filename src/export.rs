@@ -28,8 +28,12 @@ fn inject_bidi_attributes(html_content: &str) -> String {
 
     for line in html_content.lines() {
         let trimmed = line.trim_start();
-        if trimmed.starts_with("<p>") || trimmed.starts_with("<h1>") || trimmed.starts_with("<h2>")
-            || trimmed.starts_with("<h3>") || trimmed.starts_with("<blockquote>") || trimmed.starts_with("<li>")
+        if trimmed.starts_with("<p>")
+            || trimmed.starts_with("<h1>")
+            || trimmed.starts_with("<h2>")
+            || trimmed.starts_with("<h3>")
+            || trimmed.starts_with("<blockquote>")
+            || trimmed.starts_with("<li>")
         {
             // Extract text inside the tag to check direction
             let text_start = trimmed.find('>').map(|i| i + 1).unwrap_or(0);
@@ -37,7 +41,10 @@ fn inject_bidi_attributes(html_content: &str) -> String {
             if has_strong_rtl(inside_text) {
                 let tag_end = trimmed.find('>').unwrap_or(0);
                 let tag_name = &trimmed[1..tag_end];
-                let modified = format!("<{} dir=\"rtl\" lang=\"fa\" class=\"rtl-block\">{}", tag_name, inside_text);
+                let modified = format!(
+                    "<{} dir=\"rtl\" lang=\"fa\" class=\"rtl-block\">{}",
+                    tag_name, inside_text
+                );
                 output.push_str(&modified);
                 output.push('\n');
                 continue;
@@ -289,4 +296,3 @@ mod tests {
         assert!(html.contains("class=\"rtl-block\""));
     }
 }
-

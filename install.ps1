@@ -225,6 +225,7 @@ if (-not (Test-Path $configPath)) {
         'window_height = 820.0',
         'zoom_level = 1.0',
         'theme = "dark"',
+        'language = "en"',
         'target_min_words = 200',
         'target_max_words = 250',
         'timer_duration_secs = 2700',

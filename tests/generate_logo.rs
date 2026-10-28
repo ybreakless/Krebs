@@ -1,4 +1,4 @@
-﻿use std::fs;
+use std::fs;
 use std::path::Path;
 
 /// The definitive Krebs Studio logo. The test renders this vector into every
@@ -14,7 +14,11 @@ fn generate_minimalist_crab_logo() {
 
     let pixmap_size = rtree.size().to_int_size();
     let mut pixmap = tiny_skia::Pixmap::new(pixmap_size.width(), pixmap_size.height()).unwrap();
-    resvg::render(&rtree, tiny_skia::Transform::default(), &mut pixmap.as_mut());
+    resvg::render(
+        &rtree,
+        tiny_skia::Transform::default(),
+        &mut pixmap.as_mut(),
+    );
 
     let png_data = pixmap.encode_png().expect("encode png");
     fs::write(Path::new("assets/logo.png"), &png_data).expect("write assets/logo.png");

@@ -5,8 +5,8 @@ use pulldown_cmark::{Event, HeadingLevel, Parser, Tag, TagEnd};
 
 use crate::editor::detect_paragraph_direction;
 use crate::theme::{
-    ACCENT_AMBER, ACCENT_CYAN, ACCENT_GREEN, BORDER_COLOR, SURFACE_ACTIVE,
-    SURFACE_HOVER, TEXT_MUTED, TEXT_PRIMARY,
+    ACCENT_AMBER, ACCENT_CYAN, ACCENT_GREEN, BORDER_COLOR, SURFACE_ACTIVE, SURFACE_HOVER,
+    TEXT_MUTED, TEXT_PRIMARY,
 };
 
 #[derive(Debug, Clone)]
@@ -29,10 +29,11 @@ pub fn render_markdown<'a, Message: 'a>(
     content: &str,
     base_font: Font,
     zoom_level: f32,
+    lang: crate::i18n::Lang,
 ) -> Element<'a, Message> {
     if content.trim().is_empty() {
         return container(
-            text("Nothing to preview yet. Start typing markdown...")
+            text(crate::i18n::t(lang, crate::i18n::Key::NothingToPreview))
                 .size(13.0 * zoom_level)
                 .color(TEXT_MUTED),
         )
@@ -81,10 +82,7 @@ pub fn render_markdown<'a, Message: 'a>(
                 };
 
                 let heading_el = container(
-                    text(text_content)
-                        .size(size)
-                        .font(bold_font)
-                        .color(color),
+                    text(text_content).size(size).font(bold_font).color(color),
                 )
                 .padding(iced::Padding {
                     top: 14.0,
@@ -125,7 +123,9 @@ pub fn render_markdown<'a, Message: 'a>(
                     right: 8.0,
                 })
                 .style(|_t| container::Style {
-                    background: Some(iced::Background::Color(Color::from_rgba(0.12, 0.14, 0.18, 0.5))),
+                    background: Some(iced::Background::Color(Color::from_rgba(
+                        0.12, 0.14, 0.18, 0.5,
+                    ))),
                     border: iced::Border {
                         color: ACCENT_CYAN,
                         width: 3.0,
@@ -193,7 +193,16 @@ pub fn render_markdown<'a, Message: 'a>(
                 ]
                 .align_y(Alignment::Center);
 
-                elements.push(container(item_row).padding(iced::Padding { top: 2.0, bottom: 2.0, left: 12.0, right: 0.0 }).into());
+                elements.push(
+                    container(item_row)
+                        .padding(iced::Padding {
+                            top: 2.0,
+                            bottom: 2.0,
+                            left: 12.0,
+                            right: 0.0,
+                        })
+                        .into(),
+                );
             }
 
             Event::Start(Tag::Strong) => is_bold = true,
@@ -247,7 +256,16 @@ pub fn render_markdown<'a, Message: 'a>(
                         background: Some(iced::Background::Color(BORDER_COLOR)),
                         ..Default::default()
                     });
-                elements.push(container(rule).padding(iced::Padding { top: 12.0, bottom: 12.0, left: 0.0, right: 0.0 }).into());
+                elements.push(
+                    container(rule)
+                        .padding(iced::Padding {
+                            top: 12.0,
+                            bottom: 12.0,
+                            left: 0.0,
+                            right: 0.0,
+                        })
+                        .into(),
+                );
             }
 
             Event::SoftBreak | Event::HardBreak => {
@@ -267,10 +285,7 @@ pub fn render_markdown<'a, Message: 'a>(
 
     flush_paragraph(&mut current_spans, &mut elements, body_size, base_font);
 
-    column(elements)
-        .spacing(8)
-        .width(Length::Fill)
-        .into()
+    column(elements).spacing(8).width(Length::Fill).into()
 }
 
 fn flush_paragraph<'a, Message: 'a>(
@@ -306,7 +321,11 @@ fn flush_paragraph<'a, Message: 'a>(
     }
 
     // Check if paragraph is RTL (Persian)
-    let full_text = spans.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join("");
+    let full_text = spans
+        .iter()
+        .map(|s| s.text.as_str())
+        .collect::<Vec<_>>()
+        .join("");
     let _is_rtl = detect_paragraph_direction(&full_text) == unicode_bidi::Direction::Rtl;
 
     let mut span_widgets: Vec<Element<'a, Message>> = Vec::new();
@@ -316,7 +335,11 @@ fn flush_paragraph<'a, Message: 'a>(
             InlineStyle::Bold => (font::Style::Normal, font::Weight::Bold, ACCENT_CYAN),
             InlineStyle::Italic => (font::Style::Italic, font::Weight::Normal, ACCENT_AMBER),
             InlineStyle::BoldItalic => (font::Style::Italic, font::Weight::Bold, ACCENT_GREEN),
-            InlineStyle::Code => (font::Style::Normal, font::Weight::Normal, Color::from_rgb(0.9, 0.9, 0.7)),
+            InlineStyle::Code => (
+                font::Style::Normal,
+                font::Weight::Normal,
+                Color::from_rgb(0.9, 0.9, 0.7),
+            ),
             InlineStyle::Strikethrough => (font::Style::Normal, font::Weight::Normal, TEXT_MUTED),
             InlineStyle::Normal => (font::Style::Normal, font::Weight::Normal, TEXT_PRIMARY),
         };
@@ -336,7 +359,12 @@ fn flush_paragraph<'a, Message: 'a>(
         if matches!(span.style, InlineStyle::Code) {
             span_widgets.push(
                 container(text_el)
-                    .padding(iced::Padding { top: 1.0, bottom: 1.0, left: 5.0, right: 5.0 })
+                    .padding(iced::Padding {
+                        top: 1.0,
+                        bottom: 1.0,
+                        left: 5.0,
+                        right: 5.0,
+                    })
                     .style(|_t| container::Style {
                         background: Some(iced::Background::Color(SURFACE_ACTIVE)),
                         border: iced::Border {
@@ -358,14 +386,12 @@ fn flush_paragraph<'a, Message: 'a>(
         .align_y(Alignment::Center)
         .wrap();
 
-    let p_container = container(p_row)
-        .width(Length::Fill)
-        .padding(iced::Padding {
-            top: 4.0,
-            bottom: 4.0,
-            left: 0.0,
-            right: 0.0,
-        });
+    let p_container = container(p_row).width(Length::Fill).padding(iced::Padding {
+        top: 4.0,
+        bottom: 4.0,
+        left: 0.0,
+        right: 0.0,
+    });
 
     elements.push(p_container.into());
 }
