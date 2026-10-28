@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 pub mod config;
 pub mod editor;
 pub mod export;
@@ -14,7 +16,7 @@ use iced::font;
 use iced::keyboard::{self, Key, Modifiers};
 use iced::mouse;
 use iced::widget::{
-    button, center, column, container, row, scrollable, stack, text, text_editor, Space,
+    button, center, column, container, row, stack, text, text_editor, Space,
 };
 use iced::window;
 use iced::{Alignment, Element, Font, Length, Size, Subscription, Task, Theme};
@@ -878,11 +880,12 @@ impl OmaWrite {
             center_stack = center_stack.push(banner);
         }
 
-        let editor_scroll = scrollable(center(center_column))
+        let editor_pane = container(center_column)
             .width(Length::Fill)
-            .height(Length::Fill);
+            .height(Length::Fill)
+            .align_x(Alignment::Center);
 
-        center_stack = center_stack.push(editor_scroll);
+        center_stack = center_stack.push(editor_pane);
         center_stack = center_stack.push(bottom_status_bar);
 
         let center_pane = container(center_stack)
@@ -1038,6 +1041,31 @@ impl OmaWrite {
     }
 }
 
+fn create_app_icon() -> Option<window::Icon> {
+    const SIZE: u32 = 32;
+    let mut rgba = Vec::with_capacity((SIZE * SIZE * 4) as usize);
+    for y in 0..SIZE {
+        for x in 0..SIZE {
+            let dx = (x as f32) - 15.5;
+            let dy = (y as f32) - 15.5;
+            let dist = (dx * dx + dy * dy).sqrt();
+
+            if dist > 14.5 {
+                rgba.extend_from_slice(&[0, 0, 0, 0]);
+            } else if dist > 13.5 {
+                rgba.extend_from_slice(&[35, 37, 46, 255]);
+            } else if dist < 8.0 && dist > 5.0 {
+                rgba.extend_from_slice(&[136, 192, 208, 255]); // Nordic Cyan
+            } else if dist <= 4.0 {
+                rgba.extend_from_slice(&[235, 203, 139, 255]); // Amber
+            } else {
+                rgba.extend_from_slice(&[17, 18, 22, 255]); // Deep matte charcoal
+            }
+        }
+    }
+    window::icon::from_rgba(rgba, SIZE, SIZE).ok()
+}
+
 fn main() -> iced::Result {
     let args: Vec<String> = std::env::args().collect();
     let initial_file = if args.len() > 1 {
@@ -1056,6 +1084,7 @@ fn main() -> iced::Result {
     .window(window::Settings {
         size: Size::new(config.window_width, config.window_height),
         min_size: Some(Size::new(640.0, 420.0)),
+        icon: create_app_icon(),
         ..Default::default()
     })
     .subscription(OmaWrite::subscription)
