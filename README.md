@@ -2,7 +2,7 @@
   <img src="assets/logo.svg" alt="Krebs Logo" width="128" height="128" />
 </p>
 
-<h1 align="center">Krebs (سرطان / Krabbe)</h1>
+<h1 align="center">Krebs</h1>
 
 <p align="center">
   <strong>Portable Minimalist Writing & Whiteboard Studio with Local Hermes AI</strong><br>
@@ -74,7 +74,7 @@ Prebuilt releases for every major platform and package manager are available on 
   - Integrated with **JetBrains Mono**, **IBM Plex Mono**, **VT323 (CRT Retro)**, and **Vazirmatn (Persian RTL)**.
 - **Trilingual BiDi Engine:**
   - Automatic per-paragraph RTL (Persian/Farsi) and LTR (English/German).
-  - Persian ZWNJ (نیم‌فاصله) via `Shift + Space` and `Ctrl + Shift + 2`.
+  - Persian ZWNJ (Zero-Width Non-Joiner) via `Shift + Space` and `Ctrl + Shift + 2`.
   - German Umlaut chords (`Alt + a/o/u/s`).
 
 ---
@@ -143,7 +143,7 @@ Prebuilt releases for every major platform and package manager are available on 
 | `Ctrl + B` / `I` | Format Bold (`**text**`) / Italic (`*text*`) |
 | `Ctrl + =` / `-` / `0` | Text Scaling (50% to 300%) |
 | `Ctrl + Z` / `Ctrl + Y` | Undo / Redo (Editor & Whiteboard) |
-| `Shift + Space` | Persian ZWNJ (نیم‌فاصله, `\u{200C}`) |
+| `Shift + Space` | Persian ZWNJ (Zero-Width Non-Joiner, `\u{200C}`) |
 | `Alt + a` / `o` / `u` / `s` | German quick chord for `ä`, `ö`, `ü`, `ß` |
 | `F11` | Toggle Fullscreen |
 | `F1` | Interactive Quick Tour / Help Modal |

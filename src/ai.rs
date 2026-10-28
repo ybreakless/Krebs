@@ -2,6 +2,94 @@ use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AiProvider {
+    Hermes,   // Local Nous Hermes 3 via Ollama (Zero-cloud)
+    Claude,   // Anthropic Claude 3.5 Sonnet
+    ChatGPT,  // OpenAI GPT-4o
+    DeepSeek, // DeepSeek V3 / R1
+    Custom,   // User-defined endpoint and model
+}
+
+impl AiProvider {
+    pub fn all() -> &'static [AiProvider] {
+        &[
+            AiProvider::Hermes,
+            AiProvider::Claude,
+            AiProvider::ChatGPT,
+            AiProvider::DeepSeek,
+            AiProvider::Custom,
+        ]
+    }
+
+    pub fn from_str_id(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "claude" => Self::Claude,
+            "chatgpt" | "openai" => Self::ChatGPT,
+            "deepseek" => Self::DeepSeek,
+            "custom" => Self::Custom,
+            _ => Self::Hermes,
+        }
+    }
+
+    pub fn to_str_id(&self) -> &'static str {
+        match self {
+            Self::Hermes => "hermes",
+            Self::Claude => "claude",
+            Self::ChatGPT => "chatgpt",
+            Self::DeepSeek => "deepseek",
+            Self::Custom => "custom",
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Hermes => "Hermes 3",
+            Self::Claude => "Claude 3.5",
+            Self::ChatGPT => "ChatGPT 4o",
+            Self::DeepSeek => "DeepSeek V3",
+            Self::Custom => "Custom AI",
+        }
+    }
+
+    pub fn full_name(&self) -> &'static str {
+        match self {
+            Self::Hermes => "Hermes 3 (Local Ollama)",
+            Self::Claude => "Claude 3.5 Sonnet (Anthropic)",
+            Self::ChatGPT => "ChatGPT GPT-4o (OpenAI)",
+            Self::DeepSeek => "DeepSeek V3 / R1",
+            Self::Custom => "Custom Endpoint & Model",
+        }
+    }
+
+    pub fn default_endpoint(&self) -> &'static str {
+        match self {
+            Self::Hermes => "http://localhost:11434/v1",
+            Self::Claude => "https://api.anthropic.com/v1",
+            Self::ChatGPT => "https://api.openai.com/v1",
+            Self::DeepSeek => "https://api.deepseek.com/v1",
+            Self::Custom => "http://localhost:11434/v1",
+        }
+    }
+
+    pub fn default_model(&self) -> &'static str {
+        match self {
+            Self::Hermes => "hermes3",
+            Self::Claude => "claude-3-5-sonnet-20241022",
+            Self::ChatGPT => "gpt-4o",
+            Self::DeepSeek => "deepseek-chat",
+            Self::Custom => "model-name",
+        }
+    }
+
+    pub fn requires_api_key(&self) -> bool {
+        match self {
+            Self::Hermes => false,
+            Self::Claude | Self::ChatGPT | Self::DeepSeek | Self::Custom => true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AiAction {
     GradeEssay,
     TipsAndFeedback,
@@ -22,7 +110,7 @@ impl AiAction {
     pub fn system_prompt(&self) -> &'static str {
         match self {
             Self::GradeEssay => {
-                "You are Hermes, a premier academic writing coach and CEFR/exam evaluator. \
+                "You are an academic writing coach and CEFR/exam evaluator. \
                 Analyze the student's essay thoroughly. Provide: \
                 1) Overall Score (0-100) and CEFR proficiency estimate (B1, B2, C1, or C2). \
                 2) Structure & Argumentation (Intro, Body, Conclusion). \
@@ -32,19 +120,19 @@ impl AiAction {
                 Keep your feedback constructive, sharp, encouraging, and actionable."
             }
             Self::TipsAndFeedback => {
-                "You are Hermes, an expert writing mentor. Review the draft and provide: \
+                "You are an expert writing mentor. Review the draft and provide: \
                 1) Key strengths of the piece. \
                 2) Structural weaknesses or logical gaps. \
                 3) Transitions and flow between paragraphs. \
                 4) 3 specific edits or additions to elevate the text."
             }
             Self::FixGrammar => {
-                "You are Hermes, a meticulous proofreader and editor. \
+                "You are a meticulous proofreader and editor. \
                 Identify grammatical mistakes, awkward phrasing, wordiness, and punctuation errors. \
                 Provide clean, natural corrections and explain briefly why the rewrite improves the text."
             }
             Self::GermanB2C1 => {
-                "You are Hermes, a specialist in German Goethe/Telc B2 and C1 examination writing. \
+                "You are a specialist in German Goethe/Telc B2 and C1 examination writing. \
                 Evaluate the essay against German exam rubrics. Identify missing or weak Redemittel connectors. \
                 Suggest sophisticated connectors (e.g., 'Einerseits/Andererseits', 'Darüber hinaus', \
                 'Es liegt auf der Hand, dass...', 'Zusammenfassend lässt sich sagen'). \
@@ -58,14 +146,17 @@ impl AiAction {
 pub struct AiState {
     pub is_open: bool,
     pub is_loading: bool,
+    pub provider: AiProvider,
     pub endpoint: String,
     pub model: String,
+    pub api_key: String,
     pub last_action: Option<AiAction>,
     pub response_text: String,
     pub is_offline_fallback: bool,
     pub show_settings: bool,
     pub temp_endpoint: String,
     pub temp_model: String,
+    pub temp_api_key: String,
 }
 
 impl Default for AiState {
@@ -73,52 +164,115 @@ impl Default for AiState {
         Self {
             is_open: false,
             is_loading: false,
+            provider: AiProvider::Hermes,
             endpoint: "http://localhost:11434/v1".to_string(),
             model: "hermes3".to_string(),
+            api_key: String::new(),
             last_action: None,
             response_text: String::new(),
             is_offline_fallback: false,
             show_settings: false,
             temp_endpoint: "http://localhost:11434/v1".to_string(),
             temp_model: "hermes3".to_string(),
+            temp_api_key: String::new(),
         }
     }
 }
 
-/// Executes AI analysis using local Hermes LLM via Ollama/OpenAI-compatible endpoint,
+/// Executes AI analysis using the chosen model provider (Hermes, Claude, ChatGPT, DeepSeek, Custom),
 /// falling back seamlessly to the built-in offline evaluator if the endpoint is unreachable.
 pub fn run_ai_task(
+    provider: AiProvider,
     endpoint: String,
     model: String,
+    api_key: String,
     text: String,
     action: AiAction,
 ) -> (String, bool) {
     if text.trim().is_empty() {
         return (
-            "Your document is empty! Write or paste an essay, paragraph, or draft first, then run Hermes AI."
+            "Your document is empty! Write or paste an essay, paragraph, or draft first, then run AI diagnostics."
                 .to_string(),
             false,
         );
     }
 
-    // Try calling local Hermes LLM via OpenAI-compatible chat API
-    match call_hermes_endpoint(&endpoint, &model, &text, action) {
+    match call_ai_endpoint(provider, &endpoint, &model, &api_key, &text, action) {
         Ok(llm_response) => (llm_response, false),
         Err(_err) => {
-            // Local model offline or unreachable -> seamless offline heuristic evaluation
+            // Endpoint offline, missing key, or unreachable -> seamless offline heuristic evaluation
             let offline_report = evaluate_essay_offline(&text, action);
             (offline_report, true)
         }
     }
 }
 
-fn call_hermes_endpoint(
+fn call_ai_endpoint(
+    provider: AiProvider,
     endpoint: &str,
     model: &str,
+    api_key: &str,
     text: &str,
     action: AiAction,
 ) -> Result<String, String> {
-    let clean_url = format!("{}/chat/completions", endpoint.trim_end_matches('/'));
+    let clean_endpoint = endpoint.trim_end_matches('/');
+
+    // 1. Anthropic Claude native Messages API format
+    if provider == AiProvider::Claude || clean_endpoint.contains("anthropic.com") {
+        let url = if clean_endpoint.ends_with("/messages") {
+            clean_endpoint.to_string()
+        } else {
+            format!("{}/messages", clean_endpoint)
+        };
+
+        let body = serde_json::json!({
+            "model": model,
+            "max_tokens": 2048,
+            "system": action.system_prompt(),
+            "messages": [
+                { "role": "user", "content": text }
+            ]
+        });
+
+        let mut req = ureq::post(&url)
+            .header("Content-Type", "application/json")
+            .header("anthropic-version", "2023-06-01");
+
+        if !api_key.trim().is_empty() {
+            req = req.header("x-api-key", api_key.trim());
+        }
+
+        let resp_str = req
+            .send_json(body)
+            .map_err(|e| e.to_string())?
+            .body_mut()
+            .read_to_string()
+            .map_err(|e| e.to_string())?;
+
+        let parsed: serde_json::Value =
+            serde_json::from_str(&resp_str).map_err(|e| e.to_string())?;
+
+        if let Some(content_arr) = parsed["content"].as_array() {
+            if let Some(first_block) = content_arr.first() {
+                if let Some(txt) = first_block["text"].as_str() {
+                    return Ok(txt.to_string());
+                }
+            }
+        }
+
+        if let Some(err_msg) = parsed["error"]["message"].as_str() {
+            return Err(err_msg.to_string());
+        }
+
+        return Err("Unexpected Anthropic API response format".to_string());
+    }
+
+    // 2. OpenAI-compatible Chat Completions API format (ChatGPT, Hermes, DeepSeek, vLLM, LM Studio)
+    let url = if clean_endpoint.ends_with("/chat/completions") {
+        clean_endpoint.to_string()
+    } else {
+        format!("{}/chat/completions", clean_endpoint)
+    };
 
     let body = serde_json::json!({
         "model": model,
@@ -130,8 +284,13 @@ fn call_hermes_endpoint(
         "stream": false
     });
 
-    let resp_str = ureq::post(&clean_url)
-        .header("Content-Type", "application/json")
+    let mut req = ureq::post(&url).header("Content-Type", "application/json");
+
+    if !api_key.trim().is_empty() {
+        req = req.header("Authorization", &format!("Bearer {}", api_key.trim()));
+    }
+
+    let resp_str = req
         .send_json(body)
         .map_err(|e| e.to_string())?
         .body_mut()
@@ -250,7 +409,7 @@ pub fn evaluate_essay_offline(draft: &str, action: AiAction) -> String {
                 - {rec_1}\n\
                 - {rec_2}\n\
                 - Integrate advanced discourse markers to strengthen topic transitions.\n\n\
-                *(Offline heuristic evaluation. Connect local Hermes at `ollama run hermes3` for deep LLM analysis)*",
+                *(Offline heuristic evaluation. Choose an AI model above or connect local Hermes at `ollama run hermes3`)*",
                 score = score,
                 cefr_band = cefr_band,
                 rating = rating,
@@ -289,7 +448,7 @@ pub fn evaluate_essay_offline(draft: &str, action: AiAction) -> String {
 
         AiAction::TipsAndFeedback => {
             format!(
-                "## 💡 Hermes Writing Tips & Diagnostics\n\n\
+                "## 💡 Writing Tips & Diagnostics\n\n\
                 ### ✨ Document Highlights\n\
                 - **Length:** {word_count} words across {p_count} paragraphs.\n\
                 - **Tone:** Academic / Informative.\n\

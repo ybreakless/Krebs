@@ -70,6 +70,14 @@ pub struct AppConfig {
     pub ai_endpoint: String,
     #[serde(default = "default_ai_model")]
     pub ai_model: String,
+    #[serde(default = "default_split_ratio")]
+    pub split_ratio: f32,
+    #[serde(default = "default_drawer_width")]
+    pub drawer_width: f32,
+    #[serde(default = "default_ai_provider")]
+    pub ai_provider: String,
+    #[serde(default)]
+    pub ai_api_key: String,
 }
 
 fn default_canvas_width_mode() -> String {
@@ -98,6 +106,15 @@ fn default_ai_endpoint() -> String {
 }
 fn default_ai_model() -> String {
     "hermes3".to_string()
+}
+fn default_split_ratio() -> f32 {
+    0.50
+}
+fn default_drawer_width() -> f32 {
+    380.0
+}
+fn default_ai_provider() -> String {
+    "hermes".to_string()
 }
 
 impl Default for AppConfig {
@@ -128,6 +145,10 @@ impl Default for AppConfig {
             show_top_toolbar: true,
             ai_endpoint: "http://localhost:11434/v1".to_string(),
             ai_model: "hermes3".to_string(),
+            split_ratio: 0.50,
+            drawer_width: 380.0,
+            ai_provider: "hermes".to_string(),
+            ai_api_key: String::new(),
         }
     }
 }
@@ -408,4 +429,3 @@ mod tests {
         assert!(!path.exists());
     }
 }
-

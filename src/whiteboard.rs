@@ -1,4 +1,4 @@
-use iced::mouse;
+use iced::{mouse, touch};
 use iced::widget::canvas::{self, Frame, Geometry, LineCap, LineJoin, Path, Program, Stroke};
 use iced::{Color, Point, Rectangle, Renderer, Theme};
 
@@ -110,7 +110,7 @@ impl WhiteboardState {
                     if let Some(last) = stroke.points.last() {
                         let dx = point.x - last.x;
                         let dy = point.y - last.y;
-                        if (dx * dx + dy * dy) >= 4.0 {
+                        if (dx * dx + dy * dy) >= 2.0 {
                             stroke.points.push(point);
                         }
                     } else {
@@ -131,7 +131,7 @@ impl WhiteboardState {
         self.is_drawing = false;
 
         if let Some(stroke) = self.current_stroke.take() {
-            if stroke.points.len() >= 1 {
+            if !stroke.points.is_empty() {
                 self.undo_stack.push(self.strokes.clone());
                 self.strokes.push(stroke);
             }
@@ -213,34 +213,100 @@ where
         bounds: Rectangle,
         cursor: mouse::Cursor,
     ) -> (canvas::event::Status, Option<Message>) {
-        // Always capture button release even if cursor is outside canvas bounds
-        if let canvas::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) = event {
-            return (
-                canvas::event::Status::Captured,
-                Some(Message::from(WhiteboardMessage::PointReleased)),
-            );
-        }
-
-        let Some(cursor_pos) = cursor.position_in(bounds) else {
-            return (canvas::event::Status::Ignored, None);
-        };
-
         match event {
-            canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => (
-                canvas::event::Status::Captured,
-                Some(Message::from(WhiteboardMessage::PointPressed(cursor_pos))),
-            ),
-            canvas::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+            // 1. Touch Events (Pen Tablet Stylus & Touchscreen)
+            canvas::Event::Touch(touch::Event::FingerPressed { position, .. }) => {
+                let rel_x = position.x - bounds.x;
+                let rel_y = position.y - bounds.y;
+                if rel_x >= 0.0 && rel_x <= bounds.width && rel_y >= 0.0 && rel_y <= bounds.height {
+                    (
+                        canvas::event::Status::Captured,
+                        Some(Message::from(WhiteboardMessage::PointPressed(Point::new(rel_x, rel_y)))),
+                    )
+                } else {
+                    (canvas::event::Status::Ignored, None)
+                }
+            }
+            canvas::Event::Touch(touch::Event::FingerMoved { position, .. }) => {
+                if self.state.is_drawing {
+                    let rel_x = (position.x - bounds.x).clamp(0.0, bounds.width);
+                    let rel_y = (position.y - bounds.y).clamp(0.0, bounds.height);
+                    (
+                        canvas::event::Status::Captured,
+                        Some(Message::from(WhiteboardMessage::PointDragged(Point::new(rel_x, rel_y)))),
+                    )
+                } else {
+                    (canvas::event::Status::Ignored, None)
+                }
+            }
+            canvas::Event::Touch(touch::Event::FingerLifted { .. })
+            | canvas::Event::Touch(touch::Event::FingerLost { .. }) => {
                 if self.state.is_drawing {
                     (
                         canvas::event::Status::Captured,
-                        Some(Message::from(WhiteboardMessage::PointDragged(cursor_pos))),
+                        Some(Message::from(WhiteboardMessage::PointReleased)),
+                    )
+                } else {
+                    (canvas::event::Status::Ignored, None)
+                }
+            }
+
+            // 2. Mouse Events (Standard Mouse & Pen Stylus Left Click)
+            canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+                if let Some(cursor_pos) = cursor.position_in(bounds) {
+                    (
+                        canvas::event::Status::Captured,
+                        Some(Message::from(WhiteboardMessage::PointPressed(cursor_pos))),
+                    )
+                } else {
+                    (canvas::event::Status::Ignored, None)
+                }
+            }
+            canvas::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+                if self.state.is_drawing {
+                    let pos = if let Some(p) = cursor.position_in(bounds) {
+                        p
+                    } else if let Some(p) = cursor.position() {
+                        Point::new(
+                            (p.x - bounds.x).clamp(0.0, bounds.width),
+                            (p.y - bounds.y).clamp(0.0, bounds.height),
+                        )
+                    } else {
+                        return (canvas::event::Status::Ignored, None);
+                    };
+                    (
+                        canvas::event::Status::Captured,
+                        Some(Message::from(WhiteboardMessage::PointDragged(pos))),
+                    )
+                } else {
+                    (canvas::event::Status::Ignored, None)
+                }
+            }
+            canvas::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left))
+            | canvas::Event::Mouse(mouse::Event::CursorLeft) => {
+                if self.state.is_drawing {
+                    (
+                        canvas::event::Status::Captured,
+                        Some(Message::from(WhiteboardMessage::PointReleased)),
                     )
                 } else {
                     (canvas::event::Status::Ignored, None)
                 }
             }
             _ => (canvas::event::Status::Ignored, None),
+        }
+    }
+
+    fn mouse_interaction(
+        &self,
+        _state: &Self::State,
+        bounds: Rectangle,
+        cursor: mouse::Cursor,
+    ) -> mouse::Interaction {
+        if cursor.is_over(bounds) {
+            mouse::Interaction::Crosshair
+        } else {
+            mouse::Interaction::default()
         }
     }
 

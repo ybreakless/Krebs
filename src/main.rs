@@ -33,7 +33,7 @@ use editor::{
 };
 use sidebar::{view_left_rail, SidebarAction};
 use crate::icons::*;
-use ai::{AiAction, AiState};
+use ai::{AiAction, AiProvider, AiState};
 use theme::{
     active_tool_button_style, banner_container_style, canvas_container_style, card_container_style,
     drawer_container_style,
@@ -325,6 +325,13 @@ enum Message {
     ToggleTopToolbar,
     ToggleAiDrawer,
     SetRightDrawerTab(RightDrawerTab),
+    SelectAiProvider(AiProvider),
+    AiApiKeyChanged(String),
+    AdjustSplitRatio(f32),
+    #[allow(dead_code)]
+    SetSplitRatio(f32),
+    CycleSplitPresets,
+    AdjustDrawerWidth(f32),
     RunAiAction(AiAction),
     AiCompleted(String, bool),
     AiCopyFeedback,
@@ -435,6 +442,8 @@ impl Krebs {
         let show_top_toolbar = config.show_top_toolbar;
         let ai_endpoint = config.ai_endpoint.clone();
         let ai_model = config.ai_model.clone();
+        let ai_provider = AiProvider::from_str_id(&config.ai_provider);
+        let ai_api_key = config.ai_api_key.clone();
 
         let app = Self {
             config,
@@ -473,7 +482,10 @@ impl Krebs {
             is_maximized: false,
             show_top_toolbar,
             ai_state: AiState {
+                provider: ai_provider,
                 endpoint: ai_endpoint.clone(),
+                api_key: ai_api_key.clone(),
+                temp_api_key: ai_api_key,
                 model: ai_model.clone(),
                 temp_endpoint: ai_endpoint,
                 temp_model: ai_model,
@@ -586,6 +598,72 @@ impl Krebs {
                 Task::none()
             }
 
+            Message::SelectAiProvider(provider) => {
+                self.ai_state.provider = provider;
+                self.ai_state.endpoint = provider.default_endpoint().to_string();
+                self.ai_state.model = provider.default_model().to_string();
+                self.ai_state.temp_endpoint = self.ai_state.endpoint.clone();
+                self.ai_state.temp_model = self.ai_state.model.clone();
+                self.config.ai_provider = provider.to_str_id().to_string();
+                self.config.ai_endpoint = self.ai_state.endpoint.clone();
+                self.config.ai_model = self.ai_state.model.clone();
+                let _ = self.config.save();
+                self.notify(format!("Active Agent: {}", provider.label()));
+                Task::none()
+            }
+
+            Message::AiApiKeyChanged(key) => {
+                self.ai_state.api_key = key.clone();
+                self.ai_state.temp_api_key = key.clone();
+                self.config.ai_api_key = key;
+                let _ = self.config.save();
+                Task::none()
+            }
+
+            Message::AdjustSplitRatio(delta) => {
+                let current = self.config.split_ratio;
+                let new_ratio = (current + delta).clamp(0.15, 0.85);
+                self.config.split_ratio = (new_ratio * 100.0).round() / 100.0;
+                let _ = self.config.save();
+                let pct = (self.config.split_ratio * 100.0).round() as u16;
+                self.notify(format!("Split: {}:{}", pct, 100 - pct));
+                Task::none()
+            }
+
+            Message::SetSplitRatio(val) => {
+                self.config.split_ratio = val.clamp(0.15, 0.85);
+                let _ = self.config.save();
+                let pct = (self.config.split_ratio * 100.0).round() as u16;
+                self.notify(format!("Split: {}:{}", pct, 100 - pct));
+                Task::none()
+            }
+
+            Message::CycleSplitPresets => {
+                let current = self.config.split_ratio;
+                let next = if (current - 0.50).abs() < 0.04 {
+                    0.60
+                } else if (current - 0.60).abs() < 0.04 {
+                    0.70
+                } else if (current - 0.70).abs() < 0.04 {
+                    0.30
+                } else if (current - 0.30).abs() < 0.04 {
+                    0.40
+                } else {
+                    0.50
+                };
+                self.config.split_ratio = next;
+                let _ = self.config.save();
+                let pct = (next * 100.0).round() as u16;
+                self.notify(format!("Split: {}:{}", pct, 100 - pct));
+                Task::none()
+            }
+
+            Message::AdjustDrawerWidth(delta) => {
+                self.config.drawer_width = (self.config.drawer_width + delta).clamp(280.0, 600.0);
+                let _ = self.config.save();
+                Task::none()
+            }
+
             Message::SetRightDrawerTab(tab) => {
                 self.right_drawer_tab = tab;
                 Task::none()
@@ -594,12 +672,14 @@ impl Krebs {
             Message::RunAiAction(action) => {
                 self.ai_state.is_loading = true;
                 self.ai_state.last_action = Some(action);
+                let provider = self.ai_state.provider;
                 let endpoint = self.ai_state.endpoint.clone();
                 let model = self.ai_state.model.clone();
+                let api_key = self.ai_state.api_key.clone();
                 let text = self.content.text();
                 Task::perform(
                     async move {
-                        ai::run_ai_task(endpoint, model, text, action)
+                        ai::run_ai_task(provider, endpoint, model, api_key, text, action)
                     },
                     |(res, is_offline)| Message::AiCompleted(res, is_offline),
                 )
@@ -1078,6 +1158,11 @@ impl Krebs {
                     AppMode::Writing => AppMode::Whiteboard,
                     AppMode::Whiteboard => AppMode::Writing,
                 };
+                self.config.app_mode = match self.app_mode {
+                    AppMode::Writing => "writing".to_string(),
+                    AppMode::Whiteboard => "whiteboard".to_string(),
+                };
+                let _ = self.config.save();
                 Task::none()
             }
 
@@ -1300,6 +1385,37 @@ impl Krebs {
                 let _ = self.config.save();
                 Task::none()
             }
+
+            SidebarAction::WhiteboardToolPen => {
+                self.whiteboard.active_tool = WhiteboardTool::Pen;
+                Task::none()
+            }
+
+            SidebarAction::WhiteboardToolHighlighter => {
+                self.whiteboard.active_tool = WhiteboardTool::Highlighter;
+                Task::none()
+            }
+
+            SidebarAction::WhiteboardToolEraser => {
+                self.whiteboard.active_tool = WhiteboardTool::Eraser;
+                Task::none()
+            }
+
+            SidebarAction::WhiteboardUndo => {
+                self.whiteboard.undo();
+                Task::none()
+            }
+
+            SidebarAction::WhiteboardRedo => {
+                self.whiteboard.redo();
+                Task::none()
+            }
+
+            SidebarAction::WhiteboardWipe => {
+                self.whiteboard.clear_board();
+                self.notify("Whiteboard cleared");
+                Task::none()
+            }
         }
     }
 
@@ -1401,9 +1517,15 @@ impl Krebs {
                     }
                     return Task::none();
                 }
+                Key::Character(ref s) if s == "[" => {
+                    return self.update(Message::AdjustSplitRatio(-0.05));
+                }
+                Key::Character(ref s) if s == "]" => {
+                    return self.update(Message::AdjustSplitRatio(0.05));
+                }
                 Key::Character(ref s) if s == "2" && modifiers.shift() => {
                     insert_zwnj_at_cursor(&mut self.content);
-                    self.notify("Inserted ZWNJ (نیم‌فاصله)");
+                    self.notify("Inserted ZWNJ");
                     return Task::none();
                 }
                 _ => {}
@@ -1412,7 +1534,7 @@ impl Krebs {
 
         if modifiers.shift() && matches!(key, Key::Named(keyboard::key::Named::Space)) {
             insert_zwnj_at_cursor(&mut self.content);
-            self.notify("Inserted ZWNJ (نیم‌فاصله)");
+            self.notify("Inserted ZWNJ");
             return Task::none();
         }
 
@@ -1586,6 +1708,9 @@ impl Krebs {
         }
 
         let mut root_column = column![];
+        if self.show_top_toolbar {
+            root_column = root_column.push(self.view_top_header());
+        }
         if let Some(prog) = maybe_timer_progress {
             root_column = root_column.push(prog);
         }
@@ -1675,28 +1800,51 @@ impl Krebs {
         let center_content: Element<'a, Message> = match self.view_mode {
             ViewMode::Edit => editor_widget.into(),
             ViewMode::Split => {
+                let ratio = self.config.split_ratio.clamp(0.15, 0.85);
+                let editor_portion = (ratio * 100.0).round().clamp(15.0, 85.0) as u16;
+                let preview_portion = 100 - editor_portion;
+
+                let splitter_bar = container(
+                    column![
+                        button(center(text("◀").size(10).color(TEXT_MUTED)))
+                            .on_press(Message::AdjustSplitRatio(-0.05))
+                            .style(rail_button_style)
+                            .width(20)
+                            .height(28),
+                        button(center(text(format!("{}:{}", editor_portion, preview_portion)).size(9).color(ACCENT_CYAN)))
+                            .on_press(Message::CycleSplitPresets)
+                            .style(rail_button_style)
+                            .width(42)
+                            .height(24),
+                        button(center(text("▶").size(10).color(TEXT_MUTED)))
+                            .on_press(Message::AdjustSplitRatio(0.05))
+                            .style(rail_button_style)
+                            .width(20)
+                            .height(28),
+                    ]
+                    .spacing(4)
+                    .align_x(Alignment::Center),
+                )
+                .center_y(Length::Fill)
+                .width(46)
+                .height(Length::Fill);
+
                 row![
                     container(editor_widget)
-                        .width(Length::FillPortion(1))
+                        .width(Length::FillPortion(editor_portion))
                         .height(Length::Fill),
-                    container(Space::with_width(1))
-                        .width(1)
-                        .height(Length::Fill)
-                        .style(|_t| container::Style {
-                            background: Some(iced::Background::Color(BORDER_COLOR)),
-                            ..Default::default()
-                        }),
+                    splitter_bar,
                     container(rendered_markdown)
-                        .width(Length::FillPortion(1))
+                        .width(Length::FillPortion(preview_portion))
                         .height(Length::Fill)
                         .padding(iced::Padding {
                             top: 0.0,
                             bottom: 0.0,
-                            left: 16.0,
+                            left: 12.0,
                             right: 8.0,
                         }),
                 ]
-                .spacing(12)
+                .spacing(4)
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .into()
@@ -1736,9 +1884,6 @@ impl Krebs {
                     right: 32.0,
                 }),
         };
-
-        // Top Subtle Control Header
-        let top_header = self.view_top_header();
 
         // Optional Search Bar Overlay (Ctrl+F)
         let maybe_search = if self.search.is_open {
@@ -1780,9 +1925,6 @@ impl Krebs {
         let bottom_status_bar = self.view_bottom_status_bar();
 
         let mut studio_col = column![];
-        if self.show_top_toolbar {
-            studio_col = studio_col.push(top_header);
-        }
         if let Some(search_widget) = maybe_search {
             studio_col = studio_col.push(search_widget);
         }
@@ -1831,10 +1973,11 @@ impl Krebs {
 
         let is_ai = self.right_drawer_tab == RightDrawerTab::AiCoach;
         let ai_tab_style = if is_ai { tab_active_button_style } else { tab_inactive_button_style };
+        let ai_title = format!("✨ {}", self.ai_state.provider.label());
         let btn_ai_tab = button(
             row![
-                render_svg_icon(SVG_AI, 14, if is_ai { accent } else { TEXT_MUTED }),
-                text("Hermes AI").size(12),
+                render_svg_icon(SVG_ROBOT, 14, if is_ai { accent } else { TEXT_MUTED }),
+                text(ai_title).size(12),
             ]
             .spacing(5)
             .align_y(Alignment::Center),
@@ -1857,6 +2000,18 @@ impl Krebs {
         .style(de_tab_style)
         .padding(iced::Padding { top: 4.0, bottom: 4.0, left: 10.0, right: 10.0 });
 
+        let btn_shrink = button(center(text("◀").size(10).color(TEXT_MUTED)))
+            .on_press(Message::AdjustDrawerWidth(-30.0))
+            .style(rail_button_style)
+            .width(22)
+            .height(24);
+
+        let btn_expand = button(center(text("▶").size(10).color(TEXT_MUTED)))
+            .on_press(Message::AdjustDrawerWidth(30.0))
+            .style(rail_button_style)
+            .width(22)
+            .height(24);
+
         let btn_close = button(center(render_svg_icon(SVG_CLOSE, 12, TEXT_MUTED)))
             .on_press(Message::Sidebar(SidebarAction::ToggleRightDrawer))
             .style(rail_button_style)
@@ -1867,6 +2022,8 @@ impl Krebs {
             btn_ai_tab,
             btn_de_tab,
             Space::with_width(Length::Fill),
+            btn_shrink,
+            btn_expand,
             btn_close,
         ]
         .spacing(4)
@@ -1891,14 +2048,75 @@ impl Krebs {
         .spacing(8)
         .padding(10);
 
+        let drawer_width = self.config.drawer_width.clamp(280.0, 600.0);
         container(drawer_col)
-            .width(320)
+            .width(drawer_width)
             .height(Length::Fill)
             .style(drawer_container_style)
             .into()
     }
 
     fn view_ai_drawer_content<'a>(&'a self, accent: Color) -> Element<'a, Message> {
+        let provider_chip = |prov: AiProvider, name: &'static str| {
+            let is_sel = self.ai_state.provider == prov;
+            button(text(name).size(10.0).color(if is_sel { accent } else { TEXT_PRIMARY }))
+                .on_press(Message::SelectAiProvider(prov))
+                .style(if is_sel { tab_active_button_style } else { rail_button_style })
+                .padding(iced::Padding { top: 3.5, bottom: 3.5, left: 7.0, right: 7.0 })
+        };
+
+        let providers_row = row![
+            provider_chip(AiProvider::Hermes, "🦙 Hermes 3"),
+            provider_chip(AiProvider::Claude, "🧠 Claude 3.5"),
+            provider_chip(AiProvider::ChatGPT, "🟢 GPT-4o"),
+            provider_chip(AiProvider::DeepSeek, "⚡ DeepSeek"),
+            provider_chip(AiProvider::Custom, "⚙️ Custom"),
+        ]
+        .spacing(4)
+        .align_y(Alignment::Center);
+
+        let provider_header = column![
+            text("CHOOSE AI AGENT MODEL").size(9.0).color(TEXT_MUTED),
+            providers_row,
+        ]
+        .spacing(4);
+
+        let maybe_api_key = if self.ai_state.provider.requires_api_key() {
+            let key_placeholder = match self.ai_state.provider {
+                AiProvider::Claude => "Enter Anthropic API key (sk-ant-...)",
+                AiProvider::ChatGPT => "Enter OpenAI API key (sk-...)",
+                AiProvider::DeepSeek => "Enter DeepSeek API key (sk-...)",
+                _ => "Enter API Key / Bearer Token",
+            };
+            Some(
+                container(
+                    column![
+                        row![
+                            render_svg_icon(SVG_KEY, 12, ACCENT_AMBER),
+                            text("API KEY").size(9.0).color(ACCENT_AMBER),
+                            Space::with_width(Length::Fill),
+                            text(if self.ai_state.api_key.trim().is_empty() { "⚠️ Key Required" } else { "✓ Configured" })
+                                .size(9.0)
+                                .color(if self.ai_state.api_key.trim().is_empty() { ACCENT_AMBER } else { ACCENT_GREEN }),
+                        ]
+                        .spacing(5)
+                        .align_y(Alignment::Center),
+                        text_input(key_placeholder, &self.ai_state.api_key)
+                            .on_input(Message::AiApiKeyChanged)
+                            .secure(true)
+                            .size(11)
+                            .style(text_input_style),
+                    ]
+                    .spacing(4),
+                )
+                .padding(6)
+                .width(Length::Fill)
+                .style(card_container_style)
+            )
+        } else {
+            None
+        };
+
         let action_btn = |action: AiAction, label: &'static str, svg_icon: &'static [u8]| {
             let is_active = self.ai_state.last_action == Some(action) && !self.ai_state.is_loading;
             button(
@@ -1930,9 +2148,10 @@ impl Krebs {
         let actions_section = column![row1, row2].spacing(6);
 
         let result_section: Element<'a, Message> = if self.ai_state.is_loading {
+            let agent_name = self.ai_state.provider.label();
             container(
                 column![
-                    text("✨ Hermes is evaluating your text...").size(12).color(accent),
+                    text(format!("✨ {} is evaluating your text...", agent_name)).size(12).color(accent),
                     text("Analyzing structure, CEFR rubric, and argumentation...").size(10).color(TEXT_MUTED),
                 ]
                 .spacing(6)
@@ -1945,7 +2164,7 @@ impl Krebs {
             let offline_note: Option<Element<'a, Message>> = if self.ai_state.is_offline_fallback {
                 Some(
                     container(
-                        text("⚡ Offline Evaluator • Run 'ollama run hermes3' for deep LLM")
+                        text(format!("⚡ Offline Evaluator • Model: {}", self.ai_state.provider.label()))
                             .size(10)
                             .color(ACCENT_AMBER)
                     )
@@ -2000,12 +2219,18 @@ impl Krebs {
 
             out_col.spacing(6).height(Length::Fill).into()
         } else {
+            let agent_label = self.ai_state.provider.label();
+            let privacy_text = if self.ai_state.provider == AiProvider::Hermes {
+                "🔒 100% Private & Local\nRuns directly on your hardware via local Hermes/Ollama or the built-in offline engine."
+            } else {
+                "☁️ Cloud Model Active\nDirect API connection with your private key, or instant offline fallback if disconnected."
+            };
             container(
                 column![
-                    text("✨ Hermes AI Writing Studio").size(13).color(accent),
+                    text(format!("✨ {} Writing Studio", agent_label)).size(13).color(accent),
                     text("Grade essays against CEFR rubrics, diagnose grammatical cadence, and receive Goethe/Telc B2/C1 suggestions.").size(11).color(Color::from_rgb(0.80, 0.84, 0.90)),
                     container(
-                        text("🔒 100% Private & Local\nRuns directly on your hardware via local Hermes/Ollama or the built-in offline engine.").size(10).color(ACCENT_AMBER)
+                        text(privacy_text).size(10).color(ACCENT_AMBER)
                     )
                     .padding(6)
                     .width(Length::Fill)
@@ -2021,7 +2246,7 @@ impl Krebs {
 
         let settings_section: Element<'a, Message> = if self.ai_state.show_settings {
             column![
-                text("LOCAL AI ENDPOINT").size(9).color(TEXT_MUTED),
+                text("AI ENDPOINT").size(9).color(TEXT_MUTED),
                 text_input("http://localhost:11434/v1", &self.ai_state.temp_endpoint)
                     .on_input(Message::AiSetEndpoint)
                     .size(11)
@@ -2040,7 +2265,7 @@ impl Krebs {
             .into()
         } else {
             row![
-                text(format!("Endpoint: {} • {}", self.ai_state.model, if self.ai_state.is_offline_fallback { "Offline" } else { "Local" })).size(9.5).color(TEXT_MUTED),
+                text(format!("Model: {} • {}", self.ai_state.model, if self.ai_state.is_offline_fallback { "Offline" } else { "Online/Local" })).size(9.5).color(TEXT_MUTED),
                 Space::with_width(Length::Fill),
                 button(text("⚙️ Config").size(9.5))
                     .on_press(Message::AiToggleSettings)
@@ -2051,14 +2276,18 @@ impl Krebs {
             .into()
         };
 
-        column![
-            actions_section,
-            result_section,
-            settings_section,
-        ]
-        .spacing(8)
-        .height(Length::Fill)
-        .into()
+        let mut full_col = column![provider_header];
+        if let Some(key_box) = maybe_api_key {
+            full_col = full_col.push(key_box);
+        }
+        full_col = full_col
+            .push(actions_section)
+            .push(result_section)
+            .push(settings_section)
+            .spacing(8)
+            .height(Length::Fill);
+
+        full_col.into()
     }
 
     fn view_redemittel_drawer_content<'a>(&'a self) -> Element<'a, Message> {
@@ -2205,23 +2434,34 @@ impl Krebs {
         .style(if self.view_mode == ViewMode::Preview { tab_active_button_style } else { tab_inactive_button_style })
         .padding(iced::Padding { top: 4.0, bottom: 4.0, left: 9.0, right: 9.0 });
 
-        let left_cluster = row![
-            btn_write,
-            btn_board,
-            Space::with_width(8),
-            btn_mode_edit,
-            btn_mode_split,
-            btn_mode_preview,
-        ]
+        let left_cluster = if self.app_mode == AppMode::Writing {
+            row![
+                btn_write,
+                btn_board,
+                Space::with_width(8),
+                btn_mode_edit,
+                btn_mode_split,
+                btn_mode_preview,
+            ]
+        } else {
+            row![
+                btn_write,
+                btn_board,
+            ]
+        }
         .spacing(4)
         .align_y(Alignment::Center);
 
         // 3. Central Draggable Title Area with Blue Crab Logo
+        let title_text = match self.app_mode {
+            AppMode::Writing => "Krebs Studio",
+            AppMode::Whiteboard => "Krebs Studio — Whiteboard",
+        };
         let drag_center = mouse_area(
             container(
                 row![
                     render_svg_icon(SVG_TOUR, 14, accent),
-                    text("Krebs Studio").size(12).color(Color::from_rgba(1.0, 1.0, 1.0, 0.45)),
+                    text(title_text).size(12).color(Color::from_rgba(1.0, 1.0, 1.0, 0.45)),
                 ]
                 .spacing(6)
                 .align_y(Alignment::Center)
@@ -2233,10 +2473,11 @@ impl Krebs {
 
         // 4. Right Utilities & Tools (Hermes AI, Width, Font, Clock, Zen Hide, Window controls)
         let is_ai_open = self.config.show_right_drawer && self.right_drawer_tab == RightDrawerTab::AiCoach;
+        let agent_label = format!("✨ Agent: {} ▼", self.ai_state.provider.label());
         let btn_ai = button(
             row![
-                render_svg_icon(SVG_AI, 14, if is_ai_open { accent } else { ACCENT_CYAN }),
-                text("Hermes AI").size(12).color(if is_ai_open { accent } else { TEXT_PRIMARY }),
+                render_svg_icon(SVG_ROBOT, 14, if is_ai_open { accent } else { ACCENT_CYAN }),
+                text(agent_label).size(12).color(if is_ai_open { accent } else { TEXT_PRIMARY }),
             ]
             .spacing(5)
             .align_y(Alignment::Center),
@@ -2244,6 +2485,25 @@ impl Krebs {
         .on_press(Message::ToggleAiDrawer)
         .style(if is_ai_open { tab_active_button_style } else { rail_button_style })
         .padding(iced::Padding { top: 4.0, bottom: 4.0, left: 9.0, right: 9.0 });
+
+        let maybe_split_pill = if self.app_mode == AppMode::Writing && self.view_mode == ViewMode::Split {
+            let pct = (self.config.split_ratio * 100.0).round() as u16;
+            Some(
+                button(
+                    row![
+                        render_svg_icon(SVG_SPLIT, 12, ACCENT_CYAN),
+                        text(format!("Split {}:{}", pct, 100 - pct)).size(11.5).color(TEXT_PRIMARY),
+                    ]
+                    .spacing(4)
+                    .align_y(Alignment::Center),
+                )
+                .on_press(Message::CycleSplitPresets)
+                .style(rail_button_style)
+                .padding(iced::Padding { top: 4.0, bottom: 4.0, left: 8.0, right: 8.0 })
+            )
+        } else {
+            None
+        };
 
         let btn_width = button(
             row![
@@ -2326,22 +2586,24 @@ impl Krebs {
             .width(30)
             .height(26);
 
-        let mut right_cluster = row![
-            btn_ai,
-            btn_width,
-            btn_font,
-            btn_clock,
-            btn_clock_presets,
-            btn_theme,
-            btn_tour,
-            btn_zen_hide,
-            Space::with_width(6),
-            btn_min,
-            btn_max,
-            btn_close,
-        ]
-        .spacing(4)
-        .align_y(Alignment::Center);
+        let mut right_cluster = row![btn_ai];
+        if let Some(split_pill) = maybe_split_pill {
+            right_cluster = right_cluster.push(split_pill);
+        }
+        right_cluster = right_cluster
+            .push(btn_width)
+            .push(btn_font)
+            .push(btn_clock)
+            .push(btn_clock_presets)
+            .push(btn_theme)
+            .push(btn_tour)
+            .push(btn_zen_hide)
+            .push(Space::with_width(6))
+            .push(btn_min)
+            .push(btn_max)
+            .push(btn_close)
+            .spacing(4)
+            .align_y(Alignment::Center);
 
         if self.show_timer_presets {
             let p15 = button(text("15m").size(10)).on_press(Message::ZenTimerSet(900)).style(rail_button_style).padding(iced::Padding::new(3.0));
@@ -2430,18 +2692,6 @@ impl Krebs {
     }
 
     fn view_whiteboard_toolbar<'a>(&'a self) -> Element<'a, Message> {
-        let btn_write = button(
-            row![
-                render_svg_icon(SVG_WRITE, 13, TEXT_MUTED),
-                text("Write Studio").size(11),
-            ]
-            .spacing(5)
-            .align_y(Alignment::Center),
-        )
-        .on_press(Message::SetAppMode(AppMode::Writing))
-        .style(tab_inactive_button_style)
-        .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 8.0, right: 8.0 });
-
         let is_pen = self.whiteboard.active_tool == WhiteboardTool::Pen;
         let is_hl = self.whiteboard.active_tool == WhiteboardTool::Highlighter;
         let is_er = self.whiteboard.active_tool == WhiteboardTool::Eraser;
@@ -2572,8 +2822,6 @@ impl Krebs {
         .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 8.0, right: 8.0 });
 
         let tb_row = row![
-            btn_write,
-            Space::with_width(8),
             btn_pen,
             btn_hl,
             btn_eraser,
@@ -3218,6 +3466,48 @@ mod tests {
         assert!(grade_report.contains("Quantitative Metrics"));
 
         let tips_report = ai::evaluate_essay_offline(sample_essay, ai::AiAction::TipsAndFeedback);
-        assert!(tips_report.contains("Hermes Writing Tips"));
+        assert!(tips_report.contains("Writing Tips & Diagnostics"));
+
+        // 15. Test Resizable sections (Live Split resizing, presets, and drawer width)
+        let _ = app.update(Message::SetSplitRatio(0.50));
+        assert!((app.config.split_ratio - 0.50).abs() < 0.001);
+        let _ = app.update(Message::AdjustSplitRatio(0.05));
+        assert!((app.config.split_ratio - 0.55).abs() < 0.001);
+        let _ = app.update(Message::AdjustSplitRatio(-0.10));
+        assert!((app.config.split_ratio - 0.45).abs() < 0.001);
+        let _ = app.update(Message::CycleSplitPresets);
+        assert!((app.config.split_ratio - 0.50).abs() < 0.001);
+
+        let init_drawer = app.config.drawer_width;
+        let _ = app.update(Message::AdjustDrawerWidth(30.0));
+        assert_eq!(app.config.drawer_width, init_drawer + 30.0);
+        let _ = app.update(Message::AdjustDrawerWidth(-30.0));
+        assert_eq!(app.config.drawer_width, init_drawer);
+
+        // 16. Test Multi-Agent Provider Switcher & API Key
+        let _ = app.update(Message::SelectAiProvider(AiProvider::Claude));
+        assert_eq!(app.ai_state.provider, AiProvider::Claude);
+        assert!(app.ai_state.provider.requires_api_key());
+        let _ = app.update(Message::AiApiKeyChanged("sk-ant-testkey".to_string()));
+        assert_eq!(app.ai_state.api_key, "sk-ant-testkey");
+        assert_eq!(app.config.ai_api_key, "sk-ant-testkey");
+
+        let _ = app.update(Message::SelectAiProvider(AiProvider::ChatGPT));
+        assert_eq!(app.ai_state.provider, AiProvider::ChatGPT);
+        let _ = app.update(Message::SelectAiProvider(AiProvider::DeepSeek));
+        assert_eq!(app.ai_state.provider, AiProvider::DeepSeek);
+        let _ = app.update(Message::SelectAiProvider(AiProvider::Hermes));
+        assert_eq!(app.ai_state.provider, AiProvider::Hermes);
+        assert!(!app.ai_state.provider.requires_api_key());
+
+        // 17. Test Contextual Whiteboard Sidebar Actions
+        let _ = app.update(Message::Sidebar(SidebarAction::WhiteboardToolPen));
+        assert_eq!(app.whiteboard.active_tool, WhiteboardTool::Pen);
+        let _ = app.update(Message::Sidebar(SidebarAction::WhiteboardToolHighlighter));
+        assert_eq!(app.whiteboard.active_tool, WhiteboardTool::Highlighter);
+        let _ = app.update(Message::Sidebar(SidebarAction::WhiteboardToolEraser));
+        assert_eq!(app.whiteboard.active_tool, WhiteboardTool::Eraser);
+        let _ = app.update(Message::Sidebar(SidebarAction::WhiteboardWipe));
+        assert!(app.whiteboard.strokes.is_empty());
     }
 }

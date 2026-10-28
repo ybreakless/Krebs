@@ -7,7 +7,7 @@ use crate::editor::{DirectionMode, DocumentStats};
 use crate::icons::*;
 use crate::theme::{
     card_container_style, drawer_container_style, rail_button_active_style,
-    rail_button_style, rail_container_style, ACCENT_AMBER, ACCENT_CYAN, ACCENT_GREEN,
+    rail_button_style, rail_container_style, ACCENT_AMBER, ACCENT_CYAN, ACCENT_GREEN, ACCENT_RED,
     BORDER_COLOR, TEXT_HOVER, TEXT_MUTED, TEXT_PRIMARY,
 };
 
@@ -44,6 +44,12 @@ pub enum SidebarAction {
     TargetMinChanged(usize),
     TargetMaxChanged(usize),
     ToggleAiCoach,
+    WhiteboardToolPen,
+    WhiteboardToolHighlighter,
+    WhiteboardToolEraser,
+    WhiteboardUndo,
+    WhiteboardRedo,
+    WhiteboardWipe,
 }
 
 fn create_divider<'a>() -> Element<'a, SidebarAction> {
@@ -57,7 +63,7 @@ fn create_divider<'a>() -> Element<'a, SidebarAction> {
         .into()
 }
 
-/// Helper to build uniform 32x32 flex-centered sidebar tool button with an SVG icon
+/// Helper to build uniform 36x36 flex-centered sidebar tool button with an SVG icon
 fn sidebar_icon_button<'a>(
     svg_bytes: &'static [u8],
     icon_size: u16,
@@ -78,7 +84,7 @@ fn sidebar_icon_button<'a>(
         .height(36)
 }
 
-/// Helper to build uniform 32x32 flex-centered sidebar tool button with text
+/// Helper to build uniform 36x36 flex-centered sidebar tool button with text
 fn sidebar_text_button<'a>(
     label: &'static str,
     font_size: u16,
@@ -104,8 +110,7 @@ fn sidebar_text_button<'a>(
     .height(36)
 }
 
-/// Renders the left ultra-minimal vertical icon rail (42px wide).
-/// Every button is uniformly 32x32px with 6px border radius and 4px spacing.
+/// Renders the left ultra-minimal vertical icon rail (48px wide).
 pub fn view_left_rail<'a>(
     _direction_mode: DirectionMode,
     is_exam_drawer_open: bool,
@@ -128,6 +133,53 @@ pub fn view_left_rail<'a>(
         is_whiteboard_active,
     );
 
+    let btn_help = sidebar_icon_button(
+        SVG_TOUR,
+        16,
+        TEXT_MUTED,
+        SidebarAction::ToggleShortcutsModal,
+        false,
+    );
+
+    // If Whiteboard Studio is active, display dedicated tablet drawing tools in the rail
+    if is_whiteboard_active {
+        let btn_pen = sidebar_icon_button(SVG_PEN, 16, ACCENT_CYAN, SidebarAction::WhiteboardToolPen, false);
+        let btn_hl = sidebar_icon_button(SVG_HIGHLIGHTER, 16, TEXT_MUTED, SidebarAction::WhiteboardToolHighlighter, false);
+        let btn_eraser = sidebar_icon_button(SVG_ERASER, 16, TEXT_MUTED, SidebarAction::WhiteboardToolEraser, false);
+        let btn_undo = sidebar_icon_button(SVG_UNDO, 16, TEXT_MUTED, SidebarAction::WhiteboardUndo, false);
+        let btn_redo = sidebar_icon_button(SVG_REDO, 16, TEXT_MUTED, SidebarAction::WhiteboardRedo, false);
+        let btn_wipe = sidebar_icon_button(SVG_WIPE, 16, ACCENT_RED, SidebarAction::WhiteboardWipe, false);
+
+        let rail_col = column![
+            btn_mode,
+            create_divider(),
+            btn_pen,
+            btn_hl,
+            btn_eraser,
+            create_divider(),
+            btn_undo,
+            btn_redo,
+            create_divider(),
+            btn_wipe,
+            Space::with_height(Length::Fill),
+            btn_help,
+        ]
+        .spacing(4)
+        .align_x(Alignment::Center)
+        .padding(iced::Padding {
+            top: 6.0,
+            bottom: 6.0,
+            left: 3.0,
+            right: 3.0,
+        });
+
+        return container(rail_col)
+            .width(48)
+            .height(Length::Fill)
+            .style(rail_container_style)
+            .into();
+    }
+
     // 2. File Actions
     let btn_new = sidebar_icon_button(SVG_NEW, 16, TEXT_MUTED, SidebarAction::NewFile, false);
     let btn_open = sidebar_icon_button(SVG_OPEN, 16, TEXT_MUTED, SidebarAction::OpenFile, false);
@@ -146,7 +198,7 @@ pub fn view_left_rail<'a>(
     let btn_font = sidebar_icon_button(SVG_FONT, 16, TEXT_MUTED, SidebarAction::ToggleFontModal, false);
     let btn_export = sidebar_icon_button(SVG_EXPORT, 16, TEXT_MUTED, SidebarAction::ExportHtml, false);
 
-    // 4. Markdown Quick Formatting Buttons (Uniform 32x32)
+    // 4. Markdown Quick Formatting Buttons
     let btn_h1 = sidebar_text_button("H1", 11, SidebarAction::FormatHeading1, false);
     let btn_bold = sidebar_text_button("B", 13, SidebarAction::FormatBold, false);
     let btn_italic = sidebar_text_button("I", 13, SidebarAction::FormatItalic, false);
@@ -170,15 +222,6 @@ pub fn view_left_rail<'a>(
         if is_exam_drawer_open { ACCENT_CYAN } else { TEXT_MUTED },
         SidebarAction::ToggleRightDrawer,
         is_exam_drawer_open,
-    );
-
-    // 6. Help / Quick Tour
-    let btn_help = sidebar_icon_button(
-        SVG_TOUR,
-        16,
-        TEXT_MUTED,
-        SidebarAction::ToggleShortcutsModal,
-        false,
     );
 
     let mut rail_col = column![
@@ -249,22 +292,9 @@ pub fn view_right_drawer<'a>(
     stats: &DocumentStats,
     snippets: &'a SnippetsConfig,
 ) -> Element<'a, SidebarAction> {
-    let header = row![
-        text("German Exam Redemittel & Goals")
-            .size(12)
-            .color(TEXT_PRIMARY),
-        Space::with_width(Length::Fill),
-        button(center(render_svg_icon(SVG_CLOSE, 12, TEXT_MUTED)))
-            .on_press(SidebarAction::ToggleRightDrawer)
-            .style(rail_button_style)
-            .width(24)
-            .height(24),
-    ]
-    .align_y(Alignment::Center);
-
-    // Minimal word count target badge
-    let is_in_range = stats.word_count >= target_min_words && stats.word_count <= target_max_words;
-    let badge_color = if stats.word_count == 0 {
+    let word_count = stats.word_count;
+    let is_in_range = word_count >= target_min_words && word_count <= target_max_words;
+    let badge_color = if word_count == 0 {
         TEXT_MUTED
     } else if is_in_range {
         ACCENT_GREEN
@@ -272,88 +302,82 @@ pub fn view_right_drawer<'a>(
         ACCENT_AMBER
     };
 
-    let target_row = row![
-        text(format!("Target: {} - {} words", target_min_words, target_max_words))
-            .size(11)
-            .color(TEXT_MUTED),
+    let word_target_header = row![
+        text("EXAM WORD TARGET").size(11).color(TEXT_MUTED),
         Space::with_width(Length::Fill),
-        text(format!("{} words", stats.word_count))
-            .size(12)
+        text(format!("{word_count} / {target_min_words}–{target_max_words} w"))
+            .size(11)
             .color(badge_color),
     ]
     .align_y(Alignment::Center);
 
-    let target_card = container(target_row)
-        .padding(10)
-        .width(Length::Fill)
-        .style(card_container_style);
+    let progress_val = if target_max_words > 0 {
+        (word_count as f32 / target_max_words as f32).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
 
-    // Redemittel Categories
-    let mut snippets_col = column![
-        text("B2/C1 CONNECTORS (CLICK TO INSERT)")
-            .size(10)
-            .color(TEXT_MUTED),
-    ]
-    .spacing(8);
-
-    for cat in &snippets.categories {
-        let mut cat_col = column![
-            text(&cat.name).size(11).color(ACCENT_AMBER),
-        ]
-        .spacing(4);
-
-        for item in &cat.items {
-            let snippet_text = item.text.clone();
-            let chip = button(
-                text(&item.label)
-                    .size(11)
-                    .color(TEXT_PRIMARY),
-            )
-            .on_press(SidebarAction::InsertSnippet(snippet_text))
-            .style(|_t, status| {
-                let bg = match status {
-                    iced::widget::button::Status::Hovered => Color::from_rgba(1.0, 1.0, 1.0, 0.08),
-                    _ => Color::from_rgba(1.0, 1.0, 1.0, 0.03),
-                };
-                iced::widget::button::Style {
-                    background: Some(iced::Background::Color(bg)),
-                    border: iced::Border {
-                        color: BORDER_COLOR,
-                        width: 1.0,
-                        radius: iced::border::Radius::from(6.0),
-                    },
-                    text_color: TEXT_PRIMARY,
+    let target_progress_bar = container(
+        row![
+            container(Space::with_height(4))
+                .width(Length::FillPortion((progress_val * 100.0) as u16 + 1))
+                .style(move |_t| container::Style {
+                    background: Some(iced::Background::Color(badge_color)),
                     ..Default::default()
-                }
-            })
-            .padding(iced::Padding {
-                top: 5.0,
-                bottom: 5.0,
-                left: 10.0,
-                right: 10.0,
-            })
-            .width(Length::Fill);
+                }),
+            container(Space::with_height(4))
+                .width(Length::FillPortion(((1.0 - progress_val) * 100.0) as u16 + 1))
+                .style(|_t| container::Style {
+                    background: Some(iced::Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.05))),
+                    ..Default::default()
+                }),
+        ],
+    )
+    .width(Length::Fill)
+    .height(4);
 
-            cat_col = cat_col.push(chip);
+    let words_card = container(
+        column![
+            word_target_header,
+            Space::with_height(4),
+            target_progress_bar,
+        ]
+        .spacing(6),
+    )
+    .padding(10)
+    .style(card_container_style);
+
+    let mut snippets_col = column![].spacing(10);
+    for cat in &snippets.categories {
+        let cat_title = text(&cat.name).size(11).color(ACCENT_CYAN);
+        let mut items_col = column![cat_title].spacing(4);
+        for item in &cat.items {
+            let btn = button(text(&item.label).size(11).color(TEXT_PRIMARY))
+                .on_press(SidebarAction::InsertSnippet(item.text.clone()))
+                .style(rail_button_style)
+                .padding(iced::Padding {
+                    top: 4.0,
+                    bottom: 4.0,
+                    left: 8.0,
+                    right: 8.0,
+                })
+                .width(Length::Fill);
+            items_col = items_col.push(btn);
         }
-
-        snippets_col = snippets_col.push(cat_col);
+        snippets_col = snippets_col.push(container(items_col).padding(8).style(card_container_style));
     }
 
-    let scrollable_snippets = iced::widget::scrollable(snippets_col)
-        .height(Length::Fill);
-
     let drawer_content = column![
-        header,
-        target_card,
-        create_divider(),
-        scrollable_snippets,
+        words_card,
+        Space::with_height(4),
+        text("GERMAN B2/C1 REDEMITTEL").size(11).color(TEXT_MUTED),
+        snippets_col,
     ]
-    .spacing(12)
+    .spacing(8)
     .padding(12);
 
     container(drawer_content)
-        .width(280)
+        .width(Length::Fill)
         .height(Length::Fill)
         .style(drawer_container_style)
         .into()
