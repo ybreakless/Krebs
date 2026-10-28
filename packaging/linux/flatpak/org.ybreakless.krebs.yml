@@ -1,0 +1,36 @@
+app-id: org.ybreakless.krebs
+runtime: org.freedesktop.Platform
+runtime-version: '23.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: krebs
+
+finish-args:
+  - --share=ipc
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --device=dri
+  - --filesystem=host
+  - --talk-name=org.freedesktop.Notifications
+
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  env:
+    CARGO_HOME: /run/build/krebs/cargo
+
+modules:
+  - name: krebs
+    buildsystem: simple
+    build-commands:
+      - cargo build --release
+      - install -Dm755 target/release/krebs /app/bin/krebs
+      - install -Dm755 packaging/linux/krabbe /app/bin/krabbe
+      - install -Dm644 packaging/linux/flatpak/org.ybreakless.krebs.desktop /app/share/applications/org.ybreakless.krebs.desktop
+      - install -Dm644 assets/logo.svg /app/share/icons/hicolor/scalable/apps/org.ybreakless.krebs.svg
+      - install -Dm644 assets/logo.png /app/share/icons/hicolor/512x512/apps/org.ybreakless.krebs.png
+      - install -Dm644 packaging/linux/flatpak/org.ybreakless.krebs.metainfo.xml /app/share/metainfo/org.ybreakless.krebs.metainfo.xml
+    sources:
+      - type: git
+        url: https://github.com/ybreakless/Krebs.git
+        branch: main

@@ -91,6 +91,8 @@ jobs:
 
           cp target/x86_64-unknown-linux-gnu/release/krebs "$PKG_DIR/usr/bin/krebs"
           chmod 755 "$PKG_DIR/usr/bin/krebs"
+          cp packaging/linux/krabbe "$PKG_DIR/usr/bin/krabbe"
+          chmod 755 "$PKG_DIR/usr/bin/krabbe"
           cp packaging/linux/krebs.desktop "$PKG_DIR/usr/share/applications/krebs.desktop"
           cp assets/logo.svg "$PKG_DIR/usr/share/icons/hicolor/scalable/apps/krebs.svg"
           cp assets/logo.png "$PKG_DIR/usr/share/icons/hicolor/512x512/apps/krebs.png"
@@ -133,12 +135,21 @@ jobs:
           TAR_DIR="krebs-v${VERSION}-x86_64-unknown-linux-gnu"
           mkdir -p "$TAR_DIR"
           cp target/x86_64-unknown-linux-gnu/release/krebs "$TAR_DIR/krebs"
+          cp packaging/linux/krabbe "$TAR_DIR/krabbe"
+          chmod +x "$TAR_DIR/krabbe"
           cp packaging/linux/krebs.desktop "$TAR_DIR/"
           cp assets/logo.svg "$TAR_DIR/"
           cp assets/logo.png "$TAR_DIR/"
           cp README.md "$TAR_DIR/"
           cp LICENSE "$TAR_DIR/"
           tar -czvf "dist/krebs-v${VERSION}-x86_64-unknown-linux-gnu.tar.gz" "$TAR_DIR"
+
+      - name: Package Flatpak Manifest & Metadata
+        run: |
+          mkdir -p dist
+          cp packaging/linux/flatpak/org.ybreakless.krebs.yml dist/
+          cp packaging/linux/flatpak/org.ybreakless.krebs.metainfo.xml dist/
+          cp packaging/linux/flatpak/org.ybreakless.krebs.desktop dist/
 
       - name: Upload Linux Artifacts
         uses: actions/upload-artifact@v4
@@ -195,6 +206,8 @@ jobs:
           Copy-Item "assets\logo.svg" "$pkgDir\logo.svg" -Force
           Copy-Item "assets\logo.png" "$pkgDir\logo.png" -Force
           Copy-Item "install.ps1" "$pkgDir\install.ps1" -Force
+          Copy-Item "krabbe.cmd" "$pkgDir\krabbe.cmd" -Force
+          Copy-Item "krabbe" "$pkgDir\krabbe" -Force
           Copy-Item "README.md" "$pkgDir\README.md" -Force
           Copy-Item "LICENSE" "$pkgDir\LICENSE" -Force
 

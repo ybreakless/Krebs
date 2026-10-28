@@ -46,6 +46,8 @@ if command -v zstd >/dev/null 2>&1 && command -v tar >/dev/null 2>&1; then
 
     cp target/release/krebs "$PKG_DIR/usr/bin/krebs"
     chmod 755 "$PKG_DIR/usr/bin/krebs"
+    cp packaging/linux/krabbe "$PKG_DIR/usr/bin/krabbe"
+    chmod 755 "$PKG_DIR/usr/bin/krabbe"
     cp packaging/linux/krebs.desktop "$PKG_DIR/usr/share/applications/krebs.desktop"
     cp assets/logo.svg "$PKG_DIR/usr/share/icons/hicolor/scalable/apps/krebs.svg"
     cp assets/logo.png "$PKG_DIR/usr/share/icons/hicolor/512x512/apps/krebs.png"

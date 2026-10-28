@@ -51,6 +51,7 @@ install -d $RPM_BUILD_ROOT%{_docdir}/%{name}
 install -d $RPM_BUILD_ROOT%{_licensesdir}/%{name}
 
 install -m 755 target/release/krebs $RPM_BUILD_ROOT%{_bindir}/krebs
+install -m 755 packaging/linux/krabbe $RPM_BUILD_ROOT%{_bindir}/krabbe
 install -m 644 packaging/linux/krebs.desktop $RPM_BUILD_ROOT%{_datadir}/applications/krebs.desktop
 install -m 644 assets/logo.svg $RPM_BUILD_ROOT%{_datadir}/icons/hicolor/scalable/apps/krebs.svg
 install -m 644 assets/logo.png $RPM_BUILD_ROOT%{_datadir}/icons/hicolor/512x512/apps/krebs.png
@@ -61,6 +62,7 @@ install -m 644 LICENSE $RPM_BUILD_ROOT%{_licensesdir}/%{name}/LICENSE
 %license LICENSE
 %doc README.md
 %{_bindir}/krebs
+%{_bindir}/krabbe
 %{_datadir}/applications/krebs.desktop
 %{_datadir}/icons/hicolor/scalable/apps/krebs.svg
 %{_datadir}/icons/hicolor/512x512/apps/krebs.png

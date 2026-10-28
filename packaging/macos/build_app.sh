@@ -46,6 +46,7 @@ cp packaging/macos/Info.plist "$APP_NAME/Contents/Info.plist"
 echo -n "APPL????" > "$APP_NAME/Contents/PkgInfo"
 cp "$PROJECT_ROOT/krebs_universal" "$APP_NAME/Contents/MacOS/krebs"
 chmod 755 "$APP_NAME/Contents/MacOS/krebs"
+ln -sf "krebs" "$APP_NAME/Contents/MacOS/krabbe"
 cp "$PROJECT_ROOT/krebs.icns" "$APP_NAME/Contents/Resources/krebs.icns"
 rm -f "$PROJECT_ROOT/krebs_universal" "$PROJECT_ROOT/krebs.icns"
 

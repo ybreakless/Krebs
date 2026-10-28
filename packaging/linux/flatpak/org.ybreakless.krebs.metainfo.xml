@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.ybreakless.krebs</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Krebs</name>
+  <summary>Minimalist Writing &amp; Infinite Whiteboard Studio in Pure Rust</summary>
+  
+  <description>
+    <p>
+      Krebs is an ultra-minimalist, distraction-free writing studio and infinite vector whiteboard
+      engineered in 100% pure Rust. Built for thinkers, students, and authors who value speed,
+      focus, and elegance.
+    </p>
+    <p>Key Capabilities:</p>
+    <ul>
+      <li>Distraction-Free Writing: Live Markdown split preview, custom typography (JetBrains Mono, IBM Plex, VT323), and smooth Word Wrapping.</li>
+      <li>Infinite Vector Whiteboard: Smooth low-latency drawing with Surface Pen / Wacom tablet support, math grids, dot paper, and quick erase.</li>
+      <li>AI Writing Coach: Built-in essay grading, CEFR rubrics, and support for Hermes 3, Claude 3.5, ChatGPT, and DeepSeek with instant offline heuristic fallback.</li>
+      <li>Trilingual Excellence: Native Bidirectional (LTR/RTL) support with Persian/Farsi shaping and integrated German exam connectors (Redemittel).</li>
+      <li>Complete Terminal Integration: Launch instantly from any terminal with the 'krabbe' command.</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">org.ybreakless.krebs.desktop</launchable>
+
+  <url type="homepage">https://github.com/ybreakless/Krebs</url>
+  <url type="bugtracker">https://github.com/ybreakless/Krebs/issues</url>
+  <url type="vcs-browser">https://github.com/ybreakless/Krebs</url>
+
+  <provides>
+    <binary>krebs</binary>
+    <binary>krabbe</binary>
+  </provides>
+
+  <releases>
+    <release version="0.1.0" date="2026-10-28">
+      <description>
+        <p>Initial release of Krebs Studio featuring resizable Live Split sections, infinite vector whiteboard with tablet stylus support, multi-agent AI selector, and terminal krabbe launcher.</p>
+      </description>
+    </release>
+  </releases>
+
+  <content_rating type="oars-1.1" />
+</component>

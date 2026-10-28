@@ -26,17 +26,40 @@
 
 ---
 
+## ⚡ 1-Command Universal Installation
+
+Install Krebs Studio and set up the **`krabbe`** terminal command in one copy-paste line:
+
+### 🐧 Linux & 🍏 macOS
+```bash
+curl -fsSL https://raw.githubusercontent.com/ybreakless/Krebs/main/install.sh | bash
+```
+
+### 🪟 Windows (PowerShell)
+```powershell
+irm https://raw.githubusercontent.com/ybreakless/Krebs/main/install.ps1 | iex
+```
+
+> **Instant Terminal Launch:** Once installed, launch Krebs from any terminal (PowerShell, Command Prompt, Bash, Zsh) simply by typing:
+> ```bash
+> krabbe              # Open Krebs Writing & Whiteboard Studio
+> krabbe notes.md     # Open or create a Markdown document directly
+> ```
+
+---
+
 ## 📦 Multi-Platform Downloads & Packages
 
 Prebuilt releases for every major platform and package manager are available on the [**GitHub Releases**](https://github.com/ybreakless/Krebs/releases) page:
 
-### 🐧 Linux Packages
+### 🐧 Linux Packages & Flatpak
 | Distribution / Package Manager | Package / Command |
 |---|---|
+| **Universal Linux (Flatpak)** | `org.ybreakless.krebs.yml` / `flatpak install org.ybreakless.krebs.flatpak` |
 | **Ubuntu / Debian / Linux Mint (APT)** | Download `.deb` & run: `sudo apt install ./krebs_*_amd64.deb` |
 | **Fedora / RHEL / CentOS (DNF)** | Download `.rpm` & run: `sudo dnf install ./krebs-*.x86_64.rpm` |
 | **Arch Linux / Manjaro (Pacman)** | Download `.pkg.tar.zst` & run: `sudo pacman -U ./krebs-*.pkg.tar.zst` |
-| **Generic Linux (All Distros)** | Download `krebs-v*-x86_64-unknown-linux-gnu.tar.gz` and run `./krebs` |
+| **Standalone Tarball (All Distros)** | Download `krebs-v*-x86_64-unknown-linux-gnu.tar.gz` and run `./krabbe` |
 
 ### 🪟 Windows Packages
 | Architecture | Package |
@@ -45,7 +68,7 @@ Prebuilt releases for every major platform and package manager are available on 
 | **Windows x86 (Legacy 32-bit)** | `krebs-v*-i686-pc-windows-msvc.zip` |
 | **Windows ARM64 (Surface Pro / Snapdragon X)** | `krebs-v*-aarch64-pc-windows-msvc.zip` |
 
-> *Extract the archive and run `Krebs.exe` directly, or right-click `install.ps1` -> **Run with PowerShell** to register Start Menu & Desktop shortcuts.*
+> *Extract the archive and run `krabbe.cmd` or `Krebs.exe` directly, or right-click `install.ps1` -> **Run with PowerShell** to register Start Menu, Desktop shortcuts, and system PATH.*
 
 ### 🍏 macOS Packages
 | Package Type | Architecture / Compatibility |
@@ -55,7 +78,7 @@ Prebuilt releases for every major platform and package manager are available on 
 | **Apple Silicon Standalone Binary (.tar.gz)** | `krebs-v*-aarch64-apple-darwin.tar.gz` |
 | **Intel Mac Standalone Binary (.tar.gz)** | `krebs-v*-x86_64-apple-darwin.tar.gz` |
 
-> *Open `krebs-v*-macos-universal.dmg` and drag `Krebs.app` to your `/Applications` folder.*
+> *Open `krebs-v*-macos-universal.dmg` and drag `Krebs.app` to your `/Applications` folder. Symlinks to `/usr/local/bin/krabbe` allow direct terminal launching.*
 
 ---
 
@@ -132,6 +155,7 @@ Prebuilt releases for every major platform and package manager are available on 
 | `Ctrl + M` | **Switch Writing Studio ↔ Whiteboard Studio** |
 | `Ctrl + 1` | **Edit View** (Monospace text buffer) |
 | `Ctrl + 2` | **Live Split View** (Side-by-side editing + rendered preview) |
+| `Ctrl + [` / `Ctrl + ]` | **Resize Live Split Sections** (Nudge editor / preview ratio) |
 | `Ctrl + 3` | **Reader View** (Full-width rendered Markdown) |
 | `Ctrl + W` | **Cycle Canvas Width** (Standard ↔ Wide ↔ Full) |
 | `Ctrl + F` | **Toggle In-Document Search Bar** |

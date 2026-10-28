@@ -29,6 +29,7 @@ build() {
 package() {
     cd "Krebs-$pkgver"
     install -Dm755 "target/release/krebs" "$pkgdir/usr/bin/krebs"
+    install -Dm755 "packaging/linux/krabbe" "$pkgdir/usr/bin/krabbe"
     install -Dm644 "packaging/linux/krebs.desktop" "$pkgdir/usr/share/applications/krebs.desktop"
     install -Dm644 "assets/logo.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/krebs.svg"
     install -Dm644 "assets/logo.png" "$pkgdir/usr/share/icons/hicolor/512x512/apps/krebs.png"

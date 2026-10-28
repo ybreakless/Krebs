@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Krebs / Krabbe Terminal Launcher for Linux & macOS
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [ -f "$SCRIPT_DIR/target/release/krebs" ]; then
+    exec "$SCRIPT_DIR/target/release/krebs" "$@"
+fi
+
+if [ -f "$HOME/.local/bin/krebs" ]; then
+    exec "$HOME/.local/bin/krebs" "$@"
+fi
+
+if command -v krebs >/dev/null 2>&1; then
+    exec krebs "$@"
+fi
+
+echo "Krebs release binary not found. Running with cargo..."
+cargo run --release -- "$@"

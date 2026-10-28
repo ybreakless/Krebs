@@ -29,6 +29,8 @@ Copy-Item "krebs_icon.ico" "$ReleaseDir\Krebs.ico" -Force
 Copy-Item "assets\logo.svg" "$ReleaseDir\logo.svg" -Force
 Copy-Item "assets\logo.png" "$ReleaseDir\logo.png" -Force
 Copy-Item "install.ps1" "$ReleaseDir\install.ps1" -Force
+Copy-Item "krabbe.cmd" "$ReleaseDir\krabbe.cmd" -Force
+Copy-Item "krabbe" "$ReleaseDir\krabbe" -Force
 Copy-Item "README.md" "$ReleaseDir\README.md" -Force
 Copy-Item "LICENSE" "$ReleaseDir\LICENSE" -Force
 

@@ -27,6 +27,7 @@ section = "editors"
 priority = "optional"
 assets = [
     ["target/release/krebs", "usr/bin/krebs", "755"],
+    ["packaging/linux/krabbe", "usr/bin/krabbe", "755"],
     ["packaging/linux/krebs.desktop", "usr/share/applications/krebs.desktop", "644"],
     ["assets/logo.svg", "usr/share/icons/hicolor/scalable/apps/krebs.svg", "644"],
     ["assets/logo.png", "usr/share/icons/hicolor/512x512/apps/krebs.png", "644"],
@@ -36,6 +37,7 @@ assets = [
 [package.metadata.generate-rpm]
 assets = [
     { source = "target/release/krebs", dest = "/usr/bin/krebs", mode = "755" },
+    { source = "packaging/linux/krabbe", dest = "/usr/bin/krabbe", mode = "755" },
     { source = "packaging/linux/krebs.desktop", dest = "/usr/share/applications/krebs.desktop", mode = "644" },
     { source = "assets/logo.svg", dest = "/usr/share/icons/hicolor/scalable/apps/krebs.svg", mode = "644" },
     { source = "assets/logo.png", dest = "/usr/share/icons/hicolor/512x512/apps/krebs.png", mode = "644" },
