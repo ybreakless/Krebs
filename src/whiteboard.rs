@@ -213,6 +213,14 @@ where
         bounds: Rectangle,
         cursor: mouse::Cursor,
     ) -> (canvas::event::Status, Option<Message>) {
+        // Always capture button release even if cursor is outside canvas bounds
+        if let canvas::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) = event {
+            return (
+                canvas::event::Status::Captured,
+                Some(Message::from(WhiteboardMessage::PointReleased)),
+            );
+        }
+
         let Some(cursor_pos) = cursor.position_in(bounds) else {
             return (canvas::event::Status::Ignored, None);
         };
@@ -232,10 +240,6 @@ where
                     (canvas::event::Status::Ignored, None)
                 }
             }
-            canvas::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => (
-                canvas::event::Status::Captured,
-                Some(Message::from(WhiteboardMessage::PointReleased)),
-            ),
             _ => (canvas::event::Status::Ignored, None),
         }
     }

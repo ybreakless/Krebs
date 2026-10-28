@@ -2059,3 +2059,128 @@ fn main() -> iced::Result {
     }
     res
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_canvas_width_mode_cycling() {
+        let mode = CanvasWidthMode::Standard;
+        let next = mode.next();
+        assert_eq!(next, CanvasWidthMode::Wide);
+        let next = next.next();
+        assert_eq!(next, CanvasWidthMode::Full);
+        let next = next.next();
+        assert_eq!(next, CanvasWidthMode::Standard);
+    }
+
+    #[test]
+    fn test_view_mode_cycling() {
+        let mode = ViewMode::Edit;
+        let next = mode.next();
+        assert_eq!(next, ViewMode::Split);
+        let next = next.next();
+        assert_eq!(next, ViewMode::Preview);
+        let next = next.next();
+        assert_eq!(next, ViewMode::Edit);
+    }
+
+    #[test]
+    fn test_font_choice_mapping() {
+        let choices = [
+            (FontChoice::JetBrainsMono, "jetbrains_mono"),
+            (FontChoice::IbmPlexMono, "ibm_plex_mono"),
+            (FontChoice::Vt323, "vt323"),
+            (FontChoice::Vazirmatn, "vazirmatn"),
+            (FontChoice::Sans, "sans"),
+            (FontChoice::Serif, "serif"),
+        ];
+
+        for (choice, name) in choices {
+            assert_eq!(choice.to_str_name(), name);
+            assert_eq!(FontChoice::from_str_name(name), choice);
+            let _ = choice.to_font();
+        }
+    }
+
+    #[test]
+    fn test_krebs_app_buttons_and_state() {
+        let (mut app, _task) = Krebs::new(None);
+        assert_eq!(app.app_mode, AppMode::Writing);
+
+        // 1. Test Mode toggle button (Writing <-> Whiteboard)
+        let _ = app.update(Message::Sidebar(SidebarAction::ToggleAppMode));
+        assert_eq!(app.app_mode, AppMode::Whiteboard);
+        let _ = app.update(Message::Sidebar(SidebarAction::ToggleAppMode));
+        assert_eq!(app.app_mode, AppMode::Writing);
+
+        // 2. Test Canvas width cycle button
+        let initial_width = app.canvas_width_mode;
+        let _ = app.update(Message::CycleWidthMode);
+        assert_ne!(app.canvas_width_mode, initial_width);
+
+        // 3. Test View mode button
+        assert_eq!(app.view_mode, ViewMode::Edit);
+        let _ = app.update(Message::SetViewMode(ViewMode::Split));
+        assert_eq!(app.view_mode, ViewMode::Split);
+        let _ = app.update(Message::SetViewMode(ViewMode::Preview));
+        assert_eq!(app.view_mode, ViewMode::Preview);
+
+        // 4. Test Search button and match navigation
+        app.content = text_editor::Content::with_text("Rust is fast.\nWriting in Rust is awesome.\nPure Rust!");
+        let _ = app.update(Message::ToggleSearch);
+        assert!(app.search.is_open);
+
+        let _ = app.update(Message::SearchInputChanged("Rust".to_string()));
+        assert_eq!(app.search.matches.len(), 3);
+        assert_eq!(app.search.current_idx, 0);
+
+        let _ = app.update(Message::SearchNext);
+        assert_eq!(app.search.current_idx, 1);
+        let _ = app.update(Message::SearchNext);
+        assert_eq!(app.search.current_idx, 2);
+        let _ = app.update(Message::SearchNext);
+        assert_eq!(app.search.current_idx, 0);
+
+        let _ = app.update(Message::SearchPrev);
+        assert_eq!(app.search.current_idx, 2);
+
+        let _ = app.update(Message::CloseSearch);
+        assert!(!app.search.is_open);
+
+        // 5. Test Zen Timer buttons
+        assert!(!app.timer_is_running);
+        let _ = app.update(Message::ZenTimerToggle);
+        assert!(app.timer_is_running);
+        let _ = app.update(Message::ZenTimerToggle);
+        assert!(!app.timer_is_running);
+
+        let _ = app.update(Message::ZenTimerSet(1500));
+        assert_eq!(app.timer_remaining_secs, 1500);
+        assert!(app.timer_is_running);
+
+        // 6. Test Typography button
+        let _ = app.update(Message::SelectFont(FontChoice::Vt323));
+        assert_eq!(app.font_choice, FontChoice::Vt323);
+        let _ = app.update(Message::SelectFont(FontChoice::JetBrainsMono));
+        assert_eq!(app.font_choice, FontChoice::JetBrainsMono);
+
+        // 7. Test Whiteboard buttons
+        let _ = app.update(Message::WhiteboardToolSelect(WhiteboardTool::Highlighter));
+        assert_eq!(app.whiteboard.active_tool, WhiteboardTool::Highlighter);
+        let _ = app.update(Message::WhiteboardWidthSelect(6.0));
+        assert_eq!(app.whiteboard.pen_width, 6.0);
+        let _ = app.update(Message::WhiteboardPatternSelect(PaperPattern::MathGrid));
+        assert_eq!(app.whiteboard.paper_pattern, PaperPattern::MathGrid);
+
+        // 8. Test German snippets insertion button
+        let _ = app.update(Message::Sidebar(SidebarAction::InsertSnippet("In der heutigen Zeit".to_string())));
+        assert!(app.content.text().contains("In der heutigen Zeit"));
+
+        // 9. Test German umlaut chord button
+        let _ = app.update(Message::Sidebar(SidebarAction::InsertGermanChar("ä")));
+        assert!(app.content.text().contains("ä"));
+    }
+}
