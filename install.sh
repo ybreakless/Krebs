@@ -95,13 +95,36 @@ elif [ "$OS_TYPE" = "macos" ]; then
     fi
 fi
 
-# Fallback: if pre-built binary wasn't found or architecture differs, build with cargo if available
+# Fallback: if pre-built binary wasn't found or architecture differs, build from source.
+# The source snapshot is fetched as a zip so neither git nor GitHub cloning is required.
 if [ "$INSTALLED" -eq 0 ]; then
     if command -v cargo >/dev/null 2>&1; then
         echo -e "${YELLOW}>>> Pre-built binary not reachable. Building from source via cargo...${NC}"
-        git clone --depth 1 "$REPO_URL.git" "$TMP_DIR/krebs-src"
-        (cd "$TMP_DIR/krebs-src" && cargo build --release)
-        cp -f "$TMP_DIR/krebs-src/target/release/krebs" "$BIN_DIR/krebs"
+        SOURCE_URL="${REPO_URL}/archive/refs/heads/main.zip"
+        BUILD_DIR="${TMP_DIR}/krebs-build"
+        mkdir -p "$BUILD_DIR"
+
+        if command -v unzip >/dev/null 2>&1; then
+            echo -e "${CYAN}>>> Downloading source snapshot...${NC}"
+            curl -sLf "$SOURCE_URL" -o "$BUILD_DIR/krebs-main.zip"
+            unzip -qo "$BUILD_DIR/krebs-main.zip" -d "$BUILD_DIR"
+        elif command -v git >/dev/null 2>&1; then
+            echo -e "${CYAN}>>> unzip unavailable, falling back to shallow git clone...${NC}"
+            git clone --depth 1 "$REPO_URL.git" "$BUILD_DIR/krebs-main"
+        else
+            echo -e "${RED}Need either 'unzip' or 'git' to unpack the source snapshot.${NC}"
+            echo "Install one of them (e.g. 'sudo apt install unzip') and re-run."
+            exit 1
+        fi
+
+        SRC_DIR="$(dirname "$(find "$BUILD_DIR" -maxdepth 3 -name Cargo.toml | head -n 1 || true)")"
+        if [ -z "$SRC_DIR" ]; then
+            echo -e "${RED}Downloaded source snapshot contains no Cargo.toml.${NC}"
+            exit 1
+        fi
+
+        (cd "$SRC_DIR" && cargo build --release)
+        cp -f "$SRC_DIR/target/release/krebs" "$BIN_DIR/krebs"
         chmod +x "$BIN_DIR/krebs"
         INSTALLED=1
         echo -e "${GREEN}[OK] Compiled and installed from source.${NC}"
