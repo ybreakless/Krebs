@@ -1,121 +1,99 @@
-# OmaWrite-RS: Portable Rust Minimalist Writing Studio
+# Krebs: Portable Minimalist Writing & Whiteboard Studio
 
-> *"No vaults, no plugins, just you and the words."*  
-> Inspired by Omarchy's `omawrite`, architected in **100% pure Rust** with first-class trilingual support (**English, German, and Persian/Farsi**), an ultra-minimal **vertical icon rail**, and **B2/C1 exam essay training tools**.
-
----
-
-## 1. Highlights & Capabilities
-
-- **100% Pure Rust & GPU Accelerated:** Built on modern `iced` (v0.13+) powered by `cosmic-text`, `wgpu`, `swash`, `rustybuzz` (HarfBuzz), and `unicode-bidi`.
-- **True Portability ("Run Where Placed"):** Zero registry keys, zero `%APPDATA%` pollution. Resolves data relatively to `./omawrite_data/` alongside the executable (`config.toml`, `recovery/`, `snippets_de.toml`).
-- **Trilingual BiDi Writing Engine:**
-  - **Per-Paragraph Automatic BiDi:** Seamlessly right-aligns (RTL) Persian paragraphs and left-aligns (LTR) English and German paragraphs in the exact same document.
-  - **Persian (Farsi) Enhancements:** `Shift + Space` and `Ctrl + Shift + 2` insert the Zero-Width Non-Joiner (ZWNJ / نیم‌فاصله, `\u{200C}`). Automatically normalizes Arabic Yeh (`ي`) and Kaf (`ك`) to Persian Yeh (`ی`) and Kaf (`ک`).
-  - **German Exam Chords:** Non-German keyboard shortcuts (`Alt + a/o/u/s` -> `ä/ö/ü/ß`, `Alt + Shift + A/O/U` -> `Ä/Ö/Ü`).
-  - **Smart Typography:** Converts `--` to en-dash `–` (Gedankenstrich) and straight quotes `"` to German opening and closing quotes `„...“`.
-- **Bundled Offline Fonts (via `include_bytes!`):**
-  - **Latin:** `IBM Plex Mono` (Regular & Bold)
-  - **Persian:** `Vazirmatn` (Regular & Bold)
-  - Renders cursive Persian ligatures and crisp monospace essays out-of-the-box on any machine without installing system fonts.
-- **Exam & Essay Trainer Drawer (`Ctrl + E`):**
-  - **Countdown Timer:** Presets (`30m`, `45m`, `60m`, Custom) with Start, Pause, Reset, and a top-edge progress bar.
-  - **Word Count Target Tracker:** Configurable target range (e.g. `200–250 words`). Live word, character, and paragraph counter. Visual badge turns **green** when within target and **amber** when over/under.
-  - **German Exam Redemittel Drawer:** One-click expandable chips for standard Goethe/Telc B2/C1 connectors (*Einleitung*, *Meinungsäußerung*, *Vor- und Nachteile*, *Schluss*).
-- **Safety & Lifecycle:**
-  - **Silent Crash Recovery:** Untitled drafts checkpoint every 5 seconds to `./omawrite_data/recovery/untitled_<timestamp>.md`.
-  - **Debounced Auto-Save:** Writes to disk 1.5 seconds after typing stops for saved files.
-  - **External Disk Watcher:** Detects external modifications and displays non-intrusive `[Reload from Disk] | [Keep Local]` action banner.
-  - **Clean HTML / Print Export (`Ctrl + P`):** Self-contained HTML output with print styles (`@media print`) and automatic RTL markup.
+> *"No vaults, no plugins, just you, the words, and the canvas."*  
+> Built in **100% pure Rust** with modern GPU acceleration (`iced` 0.13 + `wgpu`), trilingual support (**English, German, and Persian/Farsi**), an **Rnote-inspired Whiteboard Studio for pen tablets & students**, live Markdown formatting with visual bold/italic rendering, an adjustable-width canvas, in-document search, and an ultra-minimal Zen timer.
 
 ---
 
-## 2. Visual Aesthetic (Omarchy Dark Palette)
+## 1. Key Capabilities
 
-- **Canvas Background:** Deep matte charcoal (`#111216`)
-- **Side Rails & Drawers:** Obsidian (`#0b0c0e`) with `1px` subtle border (`#23252e`)
-- **Primary Text:** Warm soft off-white (`#d8dee9`)
-- **Muted Syntax & Icons:** Dim slate (`#5c6370`)
-- **Accent Nordic Cyan:** `#88c0d0`
-- **Accent Amber:** `#ebcb8b`
-- **Target In-Range Green:** `#a3be8c`
-- **Alert Red:** `#bf616a`
+### 📝 1. Writing Studio with Live Markdown Preview
+- **Visible Bold, Italic & Formatting (`Ctrl + 1 / 2 / 3`):**
+  - **Edit View (`Ctrl + 1`):** Pure distraction-free monospace buffer.
+  - **Live Split View (`Ctrl + 2`):** Side-by-side editing and live rendered preview! As you type `**bold**`, `*italic*`, headings, or blockquotes, the right pane immediately renders actual bold, italic, code chips, and styled quotes.
+  - **Reader / Preview View (`Ctrl + 3`):** Full-page distraction-free rendered Markdown reader.
+- **Adjustable Writing Area Width (`Ctrl + W`):**
+  - Toggle between **Standard** (85ch), **Wide** (130ch / ~1350px - default), and **Full Width** (100% screen fill) so your writing area is never cramped.
+- **In-Document Search Engine (`Ctrl + F`):**
+  - Instant non-intrusive floating search bar with match counter (`"Match 2 of 5"`), Next (`Enter` / `↓`), Previous (`↑`), and line jumping.
+- **Offline Famous & Retro Typography:**
+  - One-click font selector:
+    - **JetBrains Mono:** The world's premier developer & writing font (Default).
+    - **IBM Plex Mono:** Crisp modernist typewriter monospace.
+    - **VT323:** Iconic 80s retro CRT terminal font.
+    - **Vazirmatn:** Flawless Persian / Arabic ligature shaping.
+    - **System Sans & System Serif:** Clean modern sans or classic Georgia editorial serif.
+- **Trilingual BiDi Engine:**
+  - Automatic per-paragraph RTL (Persian) and LTR (English/German).
+  - Persian ZWNJ (`Shift + Space`, `Ctrl + Shift + 2`).
+  - German Umlaut chords (`Alt + a/o/u/s`).
+  - Goethe/Telc B2/C1 Redemittel connector drawer.
 
 ---
 
-## 3. Keyboard Shortcuts Cheat Sheet
+### 🎨 2. Whiteboard & Pen Tablet Studio (Rnote-Inspired for Students)
+- Switch seamlessly between Writing Studio and Whiteboard with `Ctrl + M` or the top/rail button.
+- **Pen Tablet & Stylus Support:** High-precision, zero-latency drawing with smooth antialiased strokes and round caps.
+- **Tools:**
+  - **✏️ Ballpoint Pen:** 1.5px (Fine), 3.0px (Medium), 6.0px (Bold) for calculations, formulas, diagrams, and handwriting.
+  - **🖍️ Highlighter:** 16px translucent accent stroke for highlighting notes.
+  - **🧹 Eraser:** Radius stroke eraser for fast corrections.
+- **Student Notebook Paper Patterns:**
+  - **Dots:** Subtle engineering/bullet grid.
+  - **Ruled:** School notebook lines.
+  - **Math Grid:** Square graph paper for math graphs and physics vectors.
+  - **Blank:** Pure dark matte canvas.
+- **Color Palette:** Nordic Snow, Cyan, Amber, Aurora Green, Rose Pink.
+- **Student Wipe Button (`🗑️ Wipe Board`):**
+  - Instantly wipes the scratchpad clean after completing a calculation or problem, with full `Undo` (`Ctrl + Z`) protection!
 
-| Shortcut | Description |
+---
+
+### ⏱️ 3. Minimal Zen Timer & Clock
+- Pure, quiet, distraction-free clock in the top/bottom bar (`25:00`).
+- Click to start/pause.
+- 1-click presets: `[ 15m ] [ 25m Pomodoro ] [ 45m Exam ] [ 60m ] [ ↺ Reset ]`.
+- Top hairline (1px) progress bar smoothly tracking remaining focus time.
+
+---
+
+## 2. Keyboard Shortcuts Cheat Sheet
+
+| Shortcut | Action |
 |---|---|
-| `Ctrl + N` | Create new untitled document |
-| `Ctrl + O` | Open document (`.md`, `.txt`) |
-| `Ctrl + S` | Save document |
+| `Ctrl + M` | **Toggle Writing Studio ↔ Whiteboard Studio** |
+| `Ctrl + 1` | **Edit View** (Writing buffer only) |
+| `Ctrl + 2` | **Live Split View** (Side-by-side live rendered bold/italic preview) |
+| `Ctrl + 3` | **Reader View** (Full-width rendered Markdown) |
+| `Ctrl + W` | **Cycle Canvas Width** (Standard ↔ Wide ↔ Full Width) |
+| `Ctrl + F` | **Toggle In-Document Search** |
+| `Ctrl + N` / `O` / `S` | New / Open / Save Document |
 | `Ctrl + P` | Export clean styled HTML / Print view |
-| `Ctrl + \` | Toggle left vertical icon rail (42px) |
-| `Ctrl + E` | Toggle Exam & Essay Trainer panel |
-| `Ctrl + =` / `+` | Zoom in writing canvas |
-| `Ctrl + -` | Zoom out writing canvas |
-| `Ctrl + 0` | Reset canvas zoom to 100% |
-| `Ctrl + B` | Format Bold (`**text**`) |
-| `Ctrl + I` | Format Italic (`*text*`) |
-| `Ctrl + Shift + X` | Format Strikethrough (`~~text~~`) |
-| `Ctrl + Z` / `Ctrl + Y` | Undo / Redo buffer history |
+| `Ctrl + B` / `I` | Format Bold (`**text**`) / Italic (`*text*`) |
+| `Ctrl + =` / `-` / `0` | Text Zoom In / Out / Reset (50% to 300%) |
+| `Ctrl + Z` / `Ctrl + Y` | Undo / Redo (Text buffer or Whiteboard strokes) |
 | `Shift + Space` | Insert Persian ZWNJ (نیم‌فاصله, `\u{200C}`) |
-| `Ctrl + Shift + 2` | Alternative Persian ZWNJ shortcut |
 | `Alt + a` / `o` / `u` / `s` | German quick chord for `ä`, `ö`, `ü`, `ß` |
-| `Alt + Shift + A` / `O` / `U` | German quick chord for `Ä`, `Ö`, `Ü` |
 | `F1` or `Ctrl + /` | Toggle centered keyboard shortcuts cheat sheet |
-| `Escape` | Dismiss modal / external modification banner |
+| `Escape` | Close search bar, modals, or banners |
 
 ---
 
-## 4. Architecture & Source Tree
-
-```
-c:/Mein Projekts/Krebs/
-├── Cargo.toml
-├── fonts/
-│   ├── IBMPlexMono-Regular.ttf
-│   ├── IBMPlexMono-Bold.ttf
-│   ├── Vazirmatn-Regular.ttf
-│   └── Vazirmatn-Bold.ttf
-├── src/
-│   ├── main.rs         # Entry point, CLI args, application lifecycle, global event subscriptions
-│   ├── config.rs       # Portable data path resolution, config.toml, recovery manager, snippets_de.toml
-│   ├── editor.rs       # BiDi paragraph detector, ZWNJ/Yeh/Kaf interceptors, German chords, word counter, undo/redo
-│   ├── sidebar.rs      # Ultra-minimal 42px left rail, right exam & essay trainer drawer
-│   ├── theme.rs        # Omarchy dark mode palette, custom iced widget styles
-│   └── export.rs       # Markdown to print-ready HTML with embedded typography & BiDi tags
-└── omawrite_data/      # Automatically created alongside binary
-    ├── config.toml
-    ├── recovery/
-    └── snippets_de.toml
-```
+## 3. Supported File Types
+- **Markdown:** `.md`, `.markdown`, `.mdown`, `.mkd`
+- **Plain Text:** `.txt`, `.text`, `.note`, `.org`, `.rst`
+- **Drag & Drop:** Simply drag any text file from Windows Explorer into Krebs to open it instantly.
+- **Auto-Recovery:** Untitled buffers checkpoint silently to `./krebs_data/recovery/untitled_<timestamp>.md`.
 
 ---
 
-## 5. Building & Running
+## 4. Installation & Launching
 
-### Prerequisites
-- Rust 1.80+ (Recommended: `stable-x86_64-pc-windows-gnullvm` or `stable-x86_64-pc-windows-msvc`)
+Krebs is self-contained in `%LOCALAPPDATA%\Programs\Krebs` and bundled with all runtime DLLs (`libunwind.dll`, `libc++.dll`, `libwinpthread-1.dll`).
 
-### Development Run
-```bash
-cargo run
-# Or open a specific markdown file directly:
-cargo run -- path/to/essay.md
-```
-
-### Self-Contained Release Build
-```bash
-cargo build --release
-```
-The self-contained executable is produced at:
-`target/release/omawrite-rs.exe` (~16.4 MB with all fonts embedded).
-Simply copy `omawrite-rs.exe` anywhere (USB drive, desktop, portable folder) — it runs completely self-contained with zero installation required!
-
-### Running Unit Tests
-```bash
-cargo test
-```
-All 10 unit tests verify bidirectional paragraph analysis, ZWNJ word boundary segmentation, Persian character normalization, German typographic replacement, undo/redo snapshotting, and recovery checkpoint lifecycles.
+- **Start Menu:** Open Windows Start, type **`Krebs`**, and press Enter.
+- **Desktop:** Double-click the **`Krebs`** desktop icon.
+- **Installer / Updater:**
+  ```powershell
+  .\install.ps1
+  ```

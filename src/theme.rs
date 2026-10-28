@@ -285,3 +285,113 @@ pub fn scrollable_style(_theme: &iced::Theme, status: scrollable::Status) -> scr
         gap: None,
     }
 }
+
+pub fn search_container_style(_theme: &iced::Theme) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(Color::from_rgb(0.06, 0.07, 0.09))),
+        border: Border {
+            color: ACCENT_CYAN,
+            width: 1.0,
+            radius: Radius::from(8.0),
+        },
+        shadow: Shadow {
+            color: Color::from_rgba(0.0, 0.0, 0.0, 0.4),
+            offset: iced::Vector::new(0.0, 4.0),
+            blur_radius: 12.0,
+        },
+        text_color: Some(TEXT_PRIMARY),
+    }
+}
+
+pub fn toolbar_floating_style(_theme: &iced::Theme) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(Color::from_rgba(0.05, 0.06, 0.07, 0.95))),
+        border: Border {
+            color: BORDER_COLOR,
+            width: 1.0,
+            radius: Radius::from(8.0),
+        },
+        shadow: Shadow {
+            color: Color::from_rgba(0.0, 0.0, 0.0, 0.5),
+            offset: iced::Vector::new(0.0, 3.0),
+            blur_radius: 10.0,
+        },
+        text_color: Some(TEXT_PRIMARY),
+    }
+}
+
+pub fn active_tool_button_style(_theme: &iced::Theme, _status: button::Status) -> button::Style {
+    button::Style {
+        background: Some(Background::Color(SURFACE_ACTIVE)),
+        border: Border {
+            color: ACCENT_CYAN,
+            width: 1.0,
+            radius: Radius::from(4.0),
+        },
+        text_color: ACCENT_CYAN,
+        ..Default::default()
+    }
+}
+
+pub fn tab_active_button_style(_theme: &iced::Theme, _status: button::Status) -> button::Style {
+    button::Style {
+        background: Some(Background::Color(SURFACE_ACTIVE)),
+        border: Border {
+            color: ACCENT_CYAN,
+            width: 1.0,
+            radius: Radius::from(6.0),
+        },
+        text_color: ACCENT_CYAN,
+        ..Default::default()
+    }
+}
+
+pub fn tab_inactive_button_style(_theme: &iced::Theme, status: button::Status) -> button::Style {
+    let base = button::Style {
+        background: Some(Background::Color(Color::TRANSPARENT)),
+        border: Border {
+            color: Color::TRANSPARENT,
+            width: 1.0,
+            radius: Radius::from(6.0),
+        },
+        text_color: TEXT_MUTED,
+        ..Default::default()
+    };
+
+    match status {
+        button::Status::Active => base,
+        button::Status::Hovered => button::Style {
+            background: Some(Background::Color(SURFACE_HOVER)),
+            text_color: TEXT_PRIMARY,
+            ..base
+        },
+        button::Status::Pressed => button::Style {
+            background: Some(Background::Color(SURFACE_ACTIVE)),
+            text_color: TEXT_PRIMARY,
+            ..base
+        },
+        button::Status::Disabled => base,
+    }
+}
+
+pub fn wipe_button_style(_theme: &iced::Theme, status: button::Status) -> button::Style {
+    let base = button::Style {
+        background: Some(Background::Color(Color::from_rgba(0.75, 0.38, 0.42, 0.15))),
+        border: Border {
+            color: ACCENT_RED,
+            width: 1.0,
+            radius: Radius::from(4.0),
+        },
+        text_color: ACCENT_RED,
+        ..Default::default()
+    };
+
+    match status {
+        button::Status::Active => base,
+        button::Status::Hovered | button::Status::Pressed => button::Style {
+            background: Some(Background::Color(Color::from_rgba(0.75, 0.38, 0.42, 0.30))),
+            ..base
+        },
+        button::Status::Disabled => base,
+    }
+}

@@ -1,9 +1,13 @@
 [package]
-name = "omawrite-rs"
+name = "krebs"
 version = "0.1.0"
 edition = "2021"
-authors = ["OmaWrite Team"]
-description = "Portable Rust Minimalist Writing Studio"
+authors = ["Krebs Team"]
+description = "Krebs - Portable Minimalist Writing Studio"
+
+[[bin]]
+name = "krebs"
+path = "src/main.rs"
 
 [dependencies]
 iced = { version = "0.13.1", features = ["advanced", "tokio", "canvas"] }

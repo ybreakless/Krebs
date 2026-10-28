@@ -1,3 +1,4 @@
 [target.x86_64-pc-windows-gnullvm]
 linker = "C:\\Users\\arion\\AppData\\Local\\Microsoft\\WinGet\\Packages\\MartinStorsjo.LLVM-MinGW.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\\llvm-mingw-20261020-ucrt-x86_64\\bin\\x86_64-w64-mingw32-clang.exe"
 ar = "C:\\Users\\arion\\AppData\\Local\\Microsoft\\WinGet\\Packages\\MartinStorsjo.LLVM-MinGW.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\\llvm-mingw-20261020-ucrt-x86_64\\bin\\llvm-ar.exe"
+rustflags = ["-C", "link-arg=-static"]

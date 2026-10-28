@@ -1,40 +1,71 @@
-# OmaWrite-RS Windows Application Installer
-# Deploys OmaWrite into user programs and registers it in the Windows Start Menu and Desktop.
+# Krebs Windows Application Installer
+# Deploys Krebs into user programs and registers it in the Windows Start Menu and Desktop.
 
 $ErrorActionPreference = "Stop"
 
-$installDir = "$env:LOCALAPPDATA\Programs\OmaWrite"
-$dataDir = Join-Path $installDir "omawrite_data"
+$installDir = "$env:LOCALAPPDATA\Programs\Krebs"
+$dataDir = Join-Path $installDir "krebs_data"
 $recoveryDir = Join-Path $dataDir "recovery"
 
-Write-Host ">>> Installing OmaWrite-RS to: $installDir" -ForegroundColor Cyan
+Write-Host ">>> Installing Krebs to: $installDir" -ForegroundColor Cyan
 
 # Create directories
 New-Item -ItemType Directory -Force $installDir | Out-Null
 New-Item -ItemType Directory -Force $recoveryDir | Out-Null
 
-# 1. Copy Release Binary
-$releaseExe = Join-Path $PSScriptRoot "target\release\omawrite-rs.exe"
+# 1. Locate and Copy Release Binary
+$releaseExe = Join-Path $PSScriptRoot "target\release\krebs.exe"
 if (-not (Test-Path $releaseExe)) {
     Write-Host "Building release binary..." -ForegroundColor Yellow
-    $env:Path = "C:\Users\arion\AppData\Local\Microsoft\WinGet\Packages\MartinStorsjo.LLVM-MinGW.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\llvm-mingw-20261020-ucrt-x86_64\bin;" + $env:Path
+    $llvmBin = "C:\Users\arion\AppData\Local\Microsoft\WinGet\Packages\MartinStorsjo.LLVM-MinGW.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\llvm-mingw-20261020-ucrt-x86_64\bin"
+    if (Test-Path $llvmBin) {
+        $env:Path = "$llvmBin;" + $env:Path
+    }
     cargo build --release
 }
 
-$destExe = Join-Path $installDir "omawrite-rs.exe"
+# Stop running instances if any
+Get-Process -Name "Krebs" -ErrorAction SilentlyContinue | Stop-Process -Force
+Start-Sleep -Milliseconds 500
+
+$destExe = Join-Path $installDir "Krebs.exe"
 Copy-Item -Force $releaseExe $destExe
 $exeSize = (Get-Item $destExe).Length
 Write-Host "[OK] Installed executable: $destExe ($exeSize bytes)" -ForegroundColor Green
 
-# 2. Copy Icon
-$icoSource = Join-Path $PSScriptRoot "omawrite_icon.ico"
-$destIco = Join-Path $installDir "omawrite.ico"
+# 2. Bundle Essential Runtime DLLs (libunwind.dll, libc++.dll, libwinpthread-1.dll)
+$llvmBin = "C:\Users\arion\AppData\Local\Microsoft\WinGet\Packages\MartinStorsjo.LLVM-MinGW.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\llvm-mingw-20261020-ucrt-x86_64\bin"
+$dllNames = @("libunwind.dll", "libc++.dll", "libwinpthread-1.dll")
+$releaseDir = Split-Path -Parent $releaseExe
+
+foreach ($dll in $dllNames) {
+    $srcDll = Join-Path $releaseDir $dll
+    if (-not (Test-Path $srcDll)) {
+        $srcDll = Join-Path $PSScriptRoot $dll
+    }
+    if ((-not (Test-Path $srcDll)) -and (Test-Path $llvmBin)) {
+        $srcDll = Join-Path $llvmBin $dll
+    }
+    if (Test-Path $srcDll) {
+        Copy-Item -Force $srcDll (Join-Path $installDir $dll)
+        Write-Host "[OK] Bundled runtime dependency: $dll" -ForegroundColor Green
+    } else {
+        Write-Warning "Could not find $dll to bundle."
+    }
+}
+
+# 3. Copy Icon
+$icoSource = Join-Path $PSScriptRoot "krebs_icon.ico"
+if (-not (Test-Path $icoSource)) {
+    $icoSource = Join-Path $PSScriptRoot "omawrite_icon.ico"
+}
+$destIco = Join-Path $installDir "Krebs.ico"
 if (Test-Path $icoSource) {
     Copy-Item -Force $icoSource $destIco
     Write-Host "[OK] Installed application icon: $destIco" -ForegroundColor Green
 }
 
-# 3. Create Default config.toml if missing
+# 4. Create Default config.toml if missing
 $configPath = Join-Path $dataDir "config.toml"
 if (-not (Test-Path $configPath)) {
     $cfg = @(
@@ -58,7 +89,7 @@ if (-not (Test-Path $configPath)) {
     Write-Host "[OK] Initialized default config.toml" -ForegroundColor Green
 }
 
-# 4. Create Default snippets_de.toml if missing
+# 5. Create Default snippets_de.toml if missing
 $snippetsPath = Join-Path $dataDir "snippets_de.toml"
 if (-not (Test-Path $snippetsPath)) {
     $snip = @(
@@ -150,31 +181,37 @@ if (-not (Test-Path $snippetsPath)) {
     Write-Host "[OK] Initialized default snippets_de.toml" -ForegroundColor Green
 }
 
-# 5. Create Windows Start Menu Shortcut (registers into "All apps" & Windows Search)
+# 6. Create Windows Start Menu Shortcut (registers into "All apps" & Windows Search)
 $wsh = New-Object -ComObject WScript.Shell
 $startMenuDir = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs"
-$startMenuShortcut = Join-Path $startMenuDir "OmaWrite.lnk"
+$startMenuShortcut = Join-Path $startMenuDir "Krebs.lnk"
 $shortcut = $wsh.CreateShortcut($startMenuShortcut)
 $shortcut.TargetPath = $destExe
 $shortcut.WorkingDirectory = $installDir
 $shortcut.IconLocation = "$destIco,0"
-$shortcut.Description = "OmaWrite-RS: Portable Minimalist Writing Studio"
+$shortcut.Description = "Krebs: Minimalist Trilingual Writing Studio"
 $shortcut.Save()
 Write-Host "[OK] Added to Windows Start Menu / Application List: $startMenuShortcut" -ForegroundColor Green
 
-# 6. Create Desktop Shortcut
+# 7. Create Desktop Shortcut
 $desktopDir = [System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::Desktop)
-$desktopShortcut = Join-Path $desktopDir "OmaWrite.lnk"
+$desktopShortcut = Join-Path $desktopDir "Krebs.lnk"
 $shortcutDesktop = $wsh.CreateShortcut($desktopShortcut)
 $shortcutDesktop.TargetPath = $destExe
 $shortcutDesktop.WorkingDirectory = $installDir
 $shortcutDesktop.IconLocation = "$destIco,0"
-$shortcutDesktop.Description = "OmaWrite-RS: Portable Minimalist Writing Studio"
+$shortcutDesktop.Description = "Krebs: Minimalist Trilingual Writing Studio"
 $shortcutDesktop.Save()
 Write-Host "[OK] Added Desktop Shortcut: $desktopShortcut" -ForegroundColor Green
 
+# Clean up older shortcuts if they exist
+$oldStartShortcut = Join-Path $startMenuDir "OmaWrite.lnk"
+if (Test-Path $oldStartShortcut) { Remove-Item -Force $oldStartShortcut }
+$oldDeskShortcut = Join-Path $desktopDir "OmaWrite.lnk"
+if (Test-Path $oldDeskShortcut) { Remove-Item -Force $oldDeskShortcut }
+
 Write-Host ""
-Write-Host ">>> OmaWrite-RS installation complete! You can now launch it from:" -ForegroundColor Cyan
-Write-Host "  1. Windows Start Menu -> All Apps -> 'OmaWrite'" -ForegroundColor White
-Write-Host "  2. Windows Search (press Win key, type 'OmaWrite')" -ForegroundColor White
-Write-Host "  3. Desktop shortcut ('OmaWrite')" -ForegroundColor White
+Write-Host ">>> Krebs installation complete! You can now launch it from:" -ForegroundColor Cyan
+Write-Host "  1. Windows Start Menu -> All Apps -> 'Krebs'" -ForegroundColor White
+Write-Host "  2. Windows Search (press Win key, type 'Krebs')" -ForegroundColor White
+Write-Host "  3. Desktop shortcut ('Krebs')" -ForegroundColor White

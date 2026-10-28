@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Returns the portable data directory `./omawrite_data/` alongside the executable.
+/// Returns the portable data directory `./krebs_data/` alongside the executable.
 /// Zero system pollution: never touches AppData or registry.
 pub fn get_portable_data_dir() -> PathBuf {
     let exe_dir = std::env::current_exe()
@@ -10,14 +10,21 @@ pub fn get_portable_data_dir() -> PathBuf {
         .and_then(|p| p.parent().map(|d| d.to_path_buf()))
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
 
-    let data_dir = exe_dir.join("omawrite_data");
+    let krebs_dir = exe_dir.join("krebs_data");
+    let omawrite_dir = exe_dir.join("omawrite_data");
+    let data_dir = if omawrite_dir.exists() && !krebs_dir.exists() {
+        omawrite_dir
+    } else {
+        krebs_dir
+    };
+
     if !data_dir.exists() {
         let _ = fs::create_dir_all(&data_dir);
     }
     data_dir
 }
 
-/// Returns the recovery directory `./omawrite_data/recovery/`.
+/// Returns the recovery directory `./krebs_data/recovery/`.
 pub fn get_recovery_dir() -> PathBuf {
     let rec_dir = get_portable_data_dir().join("recovery");
     if !rec_dir.exists() {
@@ -43,18 +50,44 @@ pub struct AppConfig {
     pub smart_quotes_de: bool,
     pub smart_dashes: bool,
     pub canvas_max_width: f32,
+    #[serde(default = "default_canvas_width_mode")]
+    pub canvas_width_mode: String, // "standard", "wide", "full"
+    #[serde(default = "default_font_choice")]
+    pub font_choice: String, // "jetbrains_mono", "ibm_plex_mono", "vt323", "vazirmatn", "sans", "serif"
+    #[serde(default = "default_view_mode")]
+    pub view_mode: String, // "edit", "split", "preview"
+    #[serde(default = "default_app_mode")]
+    pub app_mode: String, // "writing", "whiteboard"
+    #[serde(default = "default_paper_pattern")]
+    pub paper_pattern: String, // "dot", "ruled", "grid", "blank"
+}
+
+fn default_canvas_width_mode() -> String {
+    "wide".to_string()
+}
+fn default_font_choice() -> String {
+    "jetbrains_mono".to_string()
+}
+fn default_view_mode() -> String {
+    "edit".to_string()
+}
+fn default_app_mode() -> String {
+    "writing".to_string()
+}
+fn default_paper_pattern() -> String {
+    "dot".to_string()
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            window_width: 1150.0,
-            window_height: 780.0,
+            window_width: 1200.0,
+            window_height: 820.0,
             zoom_level: 1.0,
             theme: "dark".to_string(),
             target_min_words: 200,
             target_max_words: 250,
-            timer_duration_secs: 2700, // 45 minutes default for B2/C1 essays
+            timer_duration_secs: 1500, // 25 minutes Pomodoro / Zen focus
             recent_files: Vec::new(),
             show_left_rail: true,
             show_right_drawer: false,
@@ -62,7 +95,12 @@ impl Default for AppConfig {
             direction_mode: "auto".to_string(),
             smart_quotes_de: true,
             smart_dashes: true,
-            canvas_max_width: 72.0,
+            canvas_max_width: 120.0,
+            canvas_width_mode: "wide".to_string(),
+            font_choice: "jetbrains_mono".to_string(),
+            view_mode: "edit".to_string(),
+            app_mode: "writing".to_string(),
+            paper_pattern: "dot".to_string(),
         }
     }
 }
@@ -107,7 +145,7 @@ impl AppConfig {
 pub struct RecoveryManager;
 
 impl RecoveryManager {
-    /// Silently checkpoints an untitled draft buffer to `./omawrite_data/recovery/untitled_<timestamp>.md`.
+    /// Silently checkpoints an untitled draft buffer to `./krebs_data/recovery/untitled_<timestamp>.md`.
     pub fn save_untitled_checkpoint(
         content: &str,
         active_checkpoint: &mut Option<PathBuf>,
@@ -310,7 +348,7 @@ mod tests {
     #[test]
     fn test_portable_paths() {
         let dir = get_portable_data_dir();
-        assert!(dir.ends_with("omawrite_data"));
+        assert!(dir.ends_with("krebs_data") || dir.ends_with("omawrite_data"));
         assert!(dir.exists());
 
         let rec_dir = get_recovery_dir();
