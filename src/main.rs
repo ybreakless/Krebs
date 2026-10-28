@@ -39,7 +39,8 @@ use theme::{
 };
 use whiteboard::{PaperPattern, WhiteboardCanvas, WhiteboardMessage, WhiteboardState, WhiteboardTool};
 
-// Bundled Offline Fonts
+// Bundled Offline Fonts & Assets
+pub static KREBS_LOGO_PNG: &[u8] = include_bytes!("../assets/logo.png");
 pub static IBM_PLEX_MONO_REGULAR: &[u8] = include_bytes!("../fonts/IBMPlexMono-Regular.ttf");
 pub static IBM_PLEX_MONO_BOLD: &[u8] = include_bytes!("../fonts/IBMPlexMono-Bold.ttf");
 pub static VAZIRMATN_REGULAR: &[u8] = include_bytes!("../fonts/Vazirmatn-Regular.ttf");
@@ -2011,28 +2012,14 @@ fn create_divider_simple<'a, Message: 'a>() -> Element<'a, Message> {
 }
 
 fn create_app_icon() -> Option<window::Icon> {
-    const SIZE: u32 = 32;
-    let mut rgba = Vec::with_capacity((SIZE * SIZE * 4) as usize);
-    for y in 0..SIZE {
-        for x in 0..SIZE {
-            let dx = (x as f32) - 15.5;
-            let dy = (y as f32) - 15.5;
-            let dist = (dx * dx + dy * dy).sqrt();
-
-            if dist > 14.5 {
-                rgba.extend_from_slice(&[0, 0, 0, 0]);
-            } else if dist > 13.5 {
-                rgba.extend_from_slice(&[35, 37, 46, 255]);
-            } else if dist < 8.0 && dist > 5.0 {
-                rgba.extend_from_slice(&[136, 192, 208, 255]);
-            } else if dist <= 4.0 {
-                rgba.extend_from_slice(&[235, 203, 139, 255]);
-            } else {
-                rgba.extend_from_slice(&[17, 18, 22, 255]);
-            }
-        }
+    if let Ok(img) = image::load_from_memory(KREBS_LOGO_PNG) {
+        let resized = img.resize_exact(64, 64, image::imageops::FilterType::Lanczos3);
+        let rgba = resized.to_rgba8();
+        let (width, height) = rgba.dimensions();
+        window::icon::from_rgba(rgba.into_raw(), width, height).ok()
+    } else {
+        None
     }
-    window::icon::from_rgba(rgba, SIZE, SIZE).ok()
 }
 
 fn main() -> iced::Result {
