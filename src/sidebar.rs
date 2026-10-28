@@ -1,13 +1,14 @@
 use iced::alignment::Horizontal;
-use iced::widget::{button, column, container, row, text, Space};
+use iced::widget::{button, center, column, container, row, text, Space};
 use iced::{Alignment, Color, Element, Length};
 
 use crate::config::SnippetsConfig;
 use crate::editor::{DirectionMode, DocumentStats};
+use crate::icons::*;
 use crate::theme::{
-    card_container_style, drawer_container_style,
-    rail_button_active_style, rail_button_style, rail_container_style,
-    ACCENT_AMBER, ACCENT_GREEN, BORDER_COLOR, TEXT_MUTED, TEXT_PRIMARY,
+    card_container_style, drawer_container_style, rail_button_active_style,
+    rail_button_style, rail_container_style, ACCENT_AMBER, ACCENT_CYAN, ACCENT_GREEN,
+    BORDER_COLOR, TEXT_HOVER, TEXT_MUTED, TEXT_PRIMARY,
 };
 
 #[derive(Debug, Clone)]
@@ -50,167 +51,126 @@ fn create_divider<'a>() -> Element<'a, SidebarAction> {
             background: Some(iced::Background::Color(BORDER_COLOR)),
             ..Default::default()
         })
-        .width(24)
+        .width(22)
         .height(1)
         .into()
 }
 
+/// Helper to build uniform 32x32 flex-centered sidebar tool button with an SVG icon
+fn sidebar_icon_button<'a>(
+    svg_bytes: &'static [u8],
+    icon_size: u16,
+    icon_color: Color,
+    action: SidebarAction,
+    is_active: bool,
+) -> button::Button<'a, SidebarAction> {
+    let btn_style = if is_active {
+        rail_button_active_style
+    } else {
+        rail_button_style
+    };
+
+    button(center(render_svg_icon(svg_bytes, icon_size, icon_color)))
+        .on_press(action)
+        .style(btn_style)
+        .width(32)
+        .height(32)
+}
+
+/// Helper to build uniform 32x32 flex-centered sidebar tool button with text
+fn sidebar_text_button<'a>(
+    label: &'static str,
+    font_size: u16,
+    action: SidebarAction,
+    is_active: bool,
+) -> button::Button<'a, SidebarAction> {
+    let btn_style = if is_active {
+        rail_button_active_style
+    } else {
+        rail_button_style
+    };
+
+    button(
+        center(
+            text(label)
+                .size(font_size)
+                .color(if is_active { ACCENT_CYAN } else { TEXT_PRIMARY }),
+        ),
+    )
+    .on_press(action)
+    .style(btn_style)
+    .width(32)
+    .height(32)
+}
+
 /// Renders the left ultra-minimal vertical icon rail (42px wide).
+/// Every button is uniformly 32x32px with 6px border radius and 4px spacing.
 pub fn view_left_rail<'a>(
-    direction_mode: DirectionMode,
+    _direction_mode: DirectionMode,
     is_exam_drawer_open: bool,
     is_german_bar_open: bool,
     is_whiteboard_active: bool,
     is_search_open: bool,
 ) -> Element<'a, SidebarAction> {
-    // Mode switcher at very top: Write vs Whiteboard
-    let mode_btn_style = if is_whiteboard_active {
-        rail_button_active_style
+    // 1. Mode switcher at very top: Write Studio vs Whiteboard Studio
+    let (mode_svg, mode_color) = if is_whiteboard_active {
+        (SVG_WHITEBOARD, ACCENT_CYAN)
     } else {
-        rail_button_style
+        (SVG_WRITE, TEXT_HOVER)
     };
-    let btn_mode = button(
-        text(if is_whiteboard_active { "🎨" } else { "📝" })
-            .size(14)
-            .align_x(Horizontal::Center),
-    )
-    .on_press(SidebarAction::ToggleAppMode)
-    .style(mode_btn_style)
-    .width(34)
-    .height(34);
+    let btn_mode = sidebar_icon_button(
+        mode_svg,
+        16,
+        mode_color,
+        SidebarAction::ToggleAppMode,
+        is_whiteboard_active,
+    );
 
-    let btn_new = button(text("+").size(16).align_x(Horizontal::Center))
-        .on_press(SidebarAction::NewFile)
-        .style(rail_button_style)
-        .width(34)
-        .height(34);
+    // 2. File Actions
+    let btn_new = sidebar_icon_button(SVG_NEW, 16, TEXT_MUTED, SidebarAction::NewFile, false);
+    let btn_open = sidebar_icon_button(SVG_OPEN, 16, TEXT_MUTED, SidebarAction::OpenFile, false);
+    let btn_save = sidebar_icon_button(SVG_SAVE, 16, TEXT_MUTED, SidebarAction::SaveFile, false);
+    let btn_search = sidebar_icon_button(
+        SVG_SEARCH,
+        15,
+        if is_search_open { ACCENT_CYAN } else { TEXT_MUTED },
+        SidebarAction::ToggleSearch,
+        is_search_open,
+    );
 
-    let btn_open = button(text("📂").size(13).align_x(Horizontal::Center))
-        .on_press(SidebarAction::OpenFile)
-        .style(rail_button_style)
-        .width(34)
-        .height(34);
+    // 3. View & Typography Tools
+    let btn_view = sidebar_icon_button(SVG_SPLIT, 16, TEXT_MUTED, SidebarAction::CycleViewMode, false);
+    let btn_width = sidebar_icon_button(SVG_WIDTH, 16, TEXT_MUTED, SidebarAction::CycleWidthMode, false);
+    let btn_font = sidebar_icon_button(SVG_FONT, 16, TEXT_MUTED, SidebarAction::ToggleFontModal, false);
+    let btn_export = sidebar_icon_button(SVG_EXPORT, 16, TEXT_MUTED, SidebarAction::ExportHtml, false);
 
-    let btn_save = button(text("💾").size(13).align_x(Horizontal::Center))
-        .on_press(SidebarAction::SaveFile)
-        .style(rail_button_style)
-        .width(34)
-        .height(34);
+    // 4. Markdown Quick Formatting Buttons (Uniform 32x32)
+    let btn_h1 = sidebar_text_button("H1", 11, SidebarAction::FormatHeading1, false);
+    let btn_bold = sidebar_text_button("B", 13, SidebarAction::FormatBold, false);
+    let btn_italic = sidebar_text_button("I", 13, SidebarAction::FormatItalic, false);
+    let btn_strike = sidebar_text_button("S", 12, SidebarAction::FormatStrikethrough, false);
+    let btn_quote = sidebar_text_button("”", 14, SidebarAction::FormatBlockquote, false);
+    let btn_list = sidebar_icon_button(SVG_LIST, 15, TEXT_MUTED, SidebarAction::FormatList, false);
 
-    let search_style = if is_search_open {
-        rail_button_active_style
-    } else {
-        rail_button_style
-    };
-    let btn_search = button(text("🔍").size(12).align_x(Horizontal::Center))
-        .on_press(SidebarAction::ToggleSearch)
-        .style(search_style)
-        .width(34)
-        .height(34);
+    // 5. Trilingual & Exam Tools
+    let btn_direction = sidebar_icon_button(SVG_BIDI, 15, TEXT_MUTED, SidebarAction::CycleDirection, false);
+    let btn_german = sidebar_text_button("äö", 11, SidebarAction::ToggleGermanBar, is_german_bar_open);
+    let btn_exam = sidebar_icon_button(
+        SVG_TIMER,
+        16,
+        if is_exam_drawer_open { ACCENT_CYAN } else { TEXT_MUTED },
+        SidebarAction::ToggleRightDrawer,
+        is_exam_drawer_open,
+    );
 
-    let btn_width = button(text("↔").size(14).align_x(Horizontal::Center))
-        .on_press(SidebarAction::CycleWidthMode)
-        .style(rail_button_style)
-        .width(34)
-        .height(34);
-
-    let btn_view = button(text("◫").size(13).align_x(Horizontal::Center))
-        .on_press(SidebarAction::CycleViewMode)
-        .style(rail_button_style)
-        .width(34)
-        .height(34);
-
-    let btn_font = button(text("🔤").size(12).align_x(Horizontal::Center))
-        .on_press(SidebarAction::ToggleFontModal)
-        .style(rail_button_style)
-        .width(34)
-        .height(34);
-
-    let btn_export = button(text("⎙").size(14).align_x(Horizontal::Center))
-        .on_press(SidebarAction::ExportHtml)
-        .style(rail_button_style)
-        .width(34)
-        .height(34);
-
-    // Markdown Quick formatting buttons
-    let btn_h1 = button(text("H1").size(11).align_x(Horizontal::Center))
-        .on_press(SidebarAction::FormatHeading1)
-        .style(rail_button_style)
-        .width(34)
-        .height(26);
-
-    let btn_bold = button(text("B").size(12).align_x(Horizontal::Center))
-        .on_press(SidebarAction::FormatBold)
-        .style(rail_button_style)
-        .width(34)
-        .height(26);
-
-    let btn_italic = button(text("I").size(12).align_x(Horizontal::Center))
-        .on_press(SidebarAction::FormatItalic)
-        .style(rail_button_style)
-        .width(34)
-        .height(26);
-
-    let btn_strike = button(text("S̶").size(12).align_x(Horizontal::Center))
-        .on_press(SidebarAction::FormatStrikethrough)
-        .style(rail_button_style)
-        .width(34)
-        .height(26);
-
-    let btn_quote = button(text("”").size(13).align_x(Horizontal::Center))
-        .on_press(SidebarAction::FormatBlockquote)
-        .style(rail_button_style)
-        .width(34)
-        .height(26);
-
-    let btn_list = button(text("•").size(14).align_x(Horizontal::Center))
-        .on_press(SidebarAction::FormatList)
-        .style(rail_button_style)
-        .width(34)
-        .height(26);
-
-    // Direction & BiDi toggle
-    let dir_label = match direction_mode {
-        DirectionMode::Auto => "⇄",
-        DirectionMode::Ltr => "→",
-        DirectionMode::Rtl => "←",
-    };
-    let btn_direction = button(text(dir_label).size(14).align_x(Horizontal::Center))
-        .on_press(SidebarAction::CycleDirection)
-        .style(rail_button_style)
-        .width(34)
-        .height(32);
-
-    // German Quick Insert Bar toggle
-    let german_btn_style = if is_german_bar_open {
-        rail_button_active_style
-    } else {
-        rail_button_style
-    };
-    let btn_german = button(text("äö").size(10).align_x(Horizontal::Center))
-        .on_press(SidebarAction::ToggleGermanBar)
-        .style(german_btn_style)
-        .width(34)
-        .height(32);
-
-    // Exam / Redemittel drawer toggle
-    let exam_btn_style = if is_exam_drawer_open {
-        rail_button_active_style
-    } else {
-        rail_button_style
-    };
-    let btn_exam = button(text("⏱").size(13).align_x(Horizontal::Center))
-        .on_press(SidebarAction::ToggleRightDrawer)
-        .style(exam_btn_style)
-        .width(34)
-        .height(32);
-
-    // Shortcuts modal button
-    let btn_help = button(text("?").size(12).align_x(Horizontal::Center))
-        .on_press(SidebarAction::ToggleShortcutsModal)
-        .style(rail_button_style)
-        .width(34)
-        .height(32);
+    // 6. Help / Quick Tour
+    let btn_help = sidebar_icon_button(
+        SVG_TOUR,
+        16,
+        TEXT_MUTED,
+        SidebarAction::ToggleShortcutsModal,
+        false,
+    );
 
     let mut rail_col = column![
         btn_mode,
@@ -284,7 +244,7 @@ pub fn view_right_drawer<'a>(
             .size(12)
             .color(TEXT_PRIMARY),
         Space::with_width(Length::Fill),
-        button(text("✕").size(11))
+        button(center(render_svg_icon(SVG_CLOSE, 12, TEXT_MUTED)))
             .on_press(SidebarAction::ToggleRightDrawer)
             .style(rail_button_style)
             .width(24)
@@ -342,25 +302,25 @@ pub fn view_right_drawer<'a>(
             .on_press(SidebarAction::InsertSnippet(snippet_text))
             .style(|_t, status| {
                 let bg = match status {
-                    iced::widget::button::Status::Hovered => Color::from_rgb(0.18, 0.20, 0.26),
-                    _ => Color::from_rgb(0.11, 0.12, 0.16),
+                    iced::widget::button::Status::Hovered => Color::from_rgba(1.0, 1.0, 1.0, 0.08),
+                    _ => Color::from_rgba(1.0, 1.0, 1.0, 0.03),
                 };
                 iced::widget::button::Style {
                     background: Some(iced::Background::Color(bg)),
                     border: iced::Border {
                         color: BORDER_COLOR,
                         width: 1.0,
-                        radius: iced::border::Radius::from(4.0),
+                        radius: iced::border::Radius::from(6.0),
                     },
                     text_color: TEXT_PRIMARY,
                     ..Default::default()
                 }
             })
             .padding(iced::Padding {
-                top: 4.0,
-                bottom: 4.0,
-                left: 8.0,
-                right: 8.0,
+                top: 5.0,
+                bottom: 5.0,
+                left: 10.0,
+                right: 10.0,
             })
             .width(Length::Fill);
 

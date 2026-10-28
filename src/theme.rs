@@ -6,19 +6,126 @@ use iced::widget::text_editor;
 use iced::widget::text_input;
 use iced::{Background, Border, Color, Shadow};
 
-// Omarchy Dark Mode Palette
+// Omarchy Dark Mode Palette & High-Contrast Neutral Grays
 pub const CANVAS_BG: Color = Color::from_rgb(0.067, 0.071, 0.086); // #111216
 pub const RAIL_BG: Color = Color::from_rgb(0.043, 0.047, 0.055); // #0b0c0e
-pub const BORDER_COLOR: Color = Color::from_rgb(0.137, 0.145, 0.180); // #23252e
-pub const TEXT_PRIMARY: Color = Color::from_rgb(0.847, 0.871, 0.914); // #d8dee9
-pub const TEXT_MUTED: Color = Color::from_rgb(0.361, 0.388, 0.439); // #5c6370
-pub const ACCENT_CYAN: Color = Color::from_rgb(0.533, 0.753, 0.816); // #88c0d0
-pub const ACCENT_AMBER: Color = Color::from_rgb(0.922, 0.796, 0.545); // #ebcb8b
-pub const ACCENT_GREEN: Color = Color::from_rgb(0.639, 0.745, 0.549); // #a3be8c
-pub const ACCENT_RED: Color = Color::from_rgb(0.749, 0.380, 0.416); // #bf616a
-pub const SURFACE_HOVER: Color = Color::from_rgb(0.118, 0.125, 0.161); // #1e2029
-pub const SURFACE_ACTIVE: Color = Color::from_rgb(0.157, 0.165, 0.212); // #282a36
+pub const BORDER_COLOR: Color = Color::from_rgba(1.0, 1.0, 1.0, 0.10); // subtle 1px divider
+pub const TEXT_PRIMARY: Color = Color::from_rgb(0.92, 0.94, 0.96); // #ebf0f5 crisp warm off-white
+pub const TEXT_MUTED: Color = Color::from_rgba(1.0, 1.0, 1.0, 0.48); // High-contrast readable muted (was too dark)
+pub const TEXT_HOVER: Color = Color::from_rgba(1.0, 1.0, 1.0, 0.92); // Crisp bright active hover
+pub const SURFACE_HOVER: Color = Color::from_rgba(1.0, 1.0, 1.0, 0.08); // Subtle background highlight
+pub const SURFACE_ACTIVE: Color = Color::from_rgba(1.0, 1.0, 1.0, 0.14); // Active surface highlight
+pub const ACCENT_CYAN: Color = Color::from_rgb(0.533, 0.753, 0.816); // #88c0d0 Nordic Cyan
+pub const ACCENT_AMBER: Color = Color::from_rgb(0.922, 0.796, 0.545); // #ebcb8b Amber
+pub const ACCENT_GREEN: Color = Color::from_rgb(0.639, 0.745, 0.549); // #a3be8c Green
+pub const ACCENT_RED: Color = Color::from_rgb(0.85, 0.38, 0.42); // #bf616a Red
 pub const BANNER_BG: Color = Color::from_rgb(0.18, 0.15, 0.08); // warm dark amber
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThemeMode {
+    OmarchyDark,
+    OledBlack,
+    DeepSlate,
+    WarmEspresso,
+}
+
+impl ThemeMode {
+    pub fn from_str_name(s: &str) -> Self {
+        match s {
+            "oled" => Self::OledBlack,
+            "slate" => Self::DeepSlate,
+            "espresso" => Self::WarmEspresso,
+            _ => Self::OmarchyDark,
+        }
+    }
+
+    pub fn to_str_name(&self) -> &'static str {
+        match self {
+            Self::OmarchyDark => "dark",
+            Self::OledBlack => "oled",
+            Self::DeepSlate => "slate",
+            Self::WarmEspresso => "espresso",
+        }
+    }
+
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Self::OmarchyDark => "Omarchy Dark",
+            Self::OledBlack => "OLED Pure Black",
+            Self::DeepSlate => "Deep Slate",
+            Self::WarmEspresso => "Warm Espresso",
+        }
+    }
+
+    pub fn canvas_bg(&self) -> Color {
+        match self {
+            Self::OmarchyDark => Color::from_rgb(0.067, 0.071, 0.086), // #111216
+            Self::OledBlack => Color::from_rgb(0.0, 0.0, 0.0), // #000000
+            Self::DeepSlate => Color::from_rgb(0.086, 0.094, 0.122), // #16181f
+            Self::WarmEspresso => Color::from_rgb(0.090, 0.078, 0.070), // #171412
+        }
+    }
+
+    pub fn rail_bg(&self) -> Color {
+        match self {
+            Self::OmarchyDark => Color::from_rgb(0.043, 0.047, 0.055), // #0b0c0e
+            Self::OledBlack => Color::from_rgb(0.035, 0.035, 0.035), // #090909
+            Self::DeepSlate => Color::from_rgb(0.059, 0.063, 0.082), // #0f1015
+            Self::WarmEspresso => Color::from_rgb(0.063, 0.051, 0.043), // #100d0b
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AccentChoice {
+    NordicCyan,
+    AmberSunset,
+    EmeraldMint,
+    NordicFrost,
+    RoseBlush,
+}
+
+impl AccentChoice {
+    pub fn from_str_name(s: &str) -> Self {
+        match s {
+            "amber" => Self::AmberSunset,
+            "green" => Self::EmeraldMint,
+            "white" => Self::NordicFrost,
+            "rose" => Self::RoseBlush,
+            _ => Self::NordicCyan,
+        }
+    }
+
+    pub fn to_str_name(&self) -> &'static str {
+        match self {
+            Self::NordicCyan => "cyan",
+            Self::AmberSunset => "amber",
+            Self::EmeraldMint => "green",
+            Self::NordicFrost => "white",
+            Self::RoseBlush => "rose",
+        }
+    }
+
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Self::NordicCyan => "Nordic Cyan",
+            Self::AmberSunset => "Amber Sunset",
+            Self::EmeraldMint => "Emerald Mint",
+            Self::NordicFrost => "Nordic Frost",
+            Self::RoseBlush => "Rose Blush",
+        }
+    }
+
+    pub fn color(&self) -> Color {
+        match self {
+            Self::NordicCyan => ACCENT_CYAN,
+            Self::AmberSunset => ACCENT_AMBER,
+            Self::EmeraldMint => ACCENT_GREEN,
+            Self::NordicFrost => Color::from_rgb(0.92, 0.94, 0.96),
+            Self::RoseBlush => ACCENT_RED,
+        }
+    }
+}
 
 pub fn canvas_container_style(_theme: &iced::Theme) -> container::Style {
     container::Style {
@@ -102,7 +209,7 @@ pub fn rail_button_style(_theme: &iced::Theme, status: button::Status) -> button
         background: Some(Background::Color(Color::TRANSPARENT)),
         text_color: TEXT_MUTED,
         border: Border {
-            radius: Radius::from(4.0),
+            radius: Radius::from(6.0),
             ..Default::default()
         },
         ..Default::default()
@@ -112,7 +219,7 @@ pub fn rail_button_style(_theme: &iced::Theme, status: button::Status) -> button
         button::Status::Active => base,
         button::Status::Hovered => button::Style {
             background: Some(Background::Color(SURFACE_HOVER)),
-            text_color: TEXT_PRIMARY,
+            text_color: TEXT_HOVER,
             ..base
         },
         button::Status::Pressed => button::Style {
@@ -121,7 +228,7 @@ pub fn rail_button_style(_theme: &iced::Theme, status: button::Status) -> button
             ..base
         },
         button::Status::Disabled => button::Style {
-            text_color: Color::from_rgba(0.36, 0.39, 0.44, 0.4),
+            text_color: Color::from_rgba(1.0, 1.0, 1.0, 0.2),
             ..base
         },
     }
@@ -134,7 +241,7 @@ pub fn rail_button_active_style(_theme: &iced::Theme, _status: button::Status) -
         border: Border {
             color: ACCENT_CYAN,
             width: 1.0,
-            radius: Radius::from(4.0),
+            radius: Radius::from(6.0),
         },
         ..Default::default()
     }
@@ -147,7 +254,7 @@ pub fn chip_button_style(_theme: &iced::Theme, status: button::Status) -> button
         border: Border {
             color: BORDER_COLOR,
             width: 1.0,
-            radius: Radius::from(4.0),
+            radius: Radius::from(6.0),
         },
         ..Default::default()
     };
@@ -159,7 +266,7 @@ pub fn chip_button_style(_theme: &iced::Theme, status: button::Status) -> button
             border: Border {
                 color: ACCENT_CYAN,
                 width: 1.0,
-                radius: Radius::from(4.0),
+                radius: Radius::from(6.0),
             },
             text_color: ACCENT_CYAN,
             ..base
@@ -181,7 +288,7 @@ pub fn accent_button_style(_theme: &iced::Theme, status: button::Status) -> butt
         background: Some(Background::Color(Color::from_rgb(0.2, 0.4, 0.5))),
         text_color: Color::WHITE,
         border: Border {
-            radius: Radius::from(4.0),
+            radius: Radius::from(6.0),
             ..Default::default()
         },
         ..Default::default()
@@ -226,7 +333,7 @@ pub fn text_input_style(_theme: &iced::Theme, status: text_input::Status) -> tex
         border: Border {
             color: BORDER_COLOR,
             width: 1.0,
-            radius: Radius::from(4.0),
+            radius: Radius::from(6.0),
         },
         icon: TEXT_MUTED,
         placeholder: TEXT_MUTED,
@@ -240,7 +347,7 @@ pub fn text_input_style(_theme: &iced::Theme, status: text_input::Status) -> tex
             border: Border {
                 color: ACCENT_CYAN,
                 width: 1.0,
-                radius: Radius::from(4.0),
+                radius: Radius::from(6.0),
             },
             ..base
         },
@@ -253,8 +360,8 @@ pub fn text_input_style(_theme: &iced::Theme, status: text_input::Status) -> tex
 
 pub fn scrollable_style(_theme: &iced::Theme, status: scrollable::Status) -> scrollable::Style {
     let scrollbar_color = match status {
-        scrollable::Status::Active => Color::from_rgba(0.36, 0.39, 0.44, 0.2),
-        scrollable::Status::Hovered { .. } => Color::from_rgba(0.53, 0.75, 0.82, 0.5),
+        scrollable::Status::Active => Color::from_rgba(1.0, 1.0, 1.0, 0.15),
+        scrollable::Status::Hovered { .. } => Color::from_rgba(0.53, 0.75, 0.82, 0.6),
         scrollable::Status::Dragged { .. } => ACCENT_CYAN,
     };
 
@@ -295,7 +402,7 @@ pub fn search_container_style(_theme: &iced::Theme) -> container::Style {
             radius: Radius::from(8.0),
         },
         shadow: Shadow {
-            color: Color::from_rgba(0.0, 0.0, 0.0, 0.4),
+            color: Color::from_rgba(0.0, 0.0, 0.0, 0.5),
             offset: iced::Vector::new(0.0, 4.0),
             blur_radius: 12.0,
         },
@@ -326,7 +433,7 @@ pub fn active_tool_button_style(_theme: &iced::Theme, _status: button::Status) -
         border: Border {
             color: ACCENT_CYAN,
             width: 1.0,
-            radius: Radius::from(4.0),
+            radius: Radius::from(6.0),
         },
         text_color: ACCENT_CYAN,
         ..Default::default()
@@ -362,12 +469,12 @@ pub fn tab_inactive_button_style(_theme: &iced::Theme, status: button::Status) -
         button::Status::Active => base,
         button::Status::Hovered => button::Style {
             background: Some(Background::Color(SURFACE_HOVER)),
-            text_color: TEXT_PRIMARY,
+            text_color: TEXT_HOVER,
             ..base
         },
         button::Status::Pressed => button::Style {
             background: Some(Background::Color(SURFACE_ACTIVE)),
-            text_color: TEXT_PRIMARY,
+            text_color: TEXT_HOVER,
             ..base
         },
         button::Status::Disabled => base,
@@ -376,11 +483,11 @@ pub fn tab_inactive_button_style(_theme: &iced::Theme, status: button::Status) -
 
 pub fn wipe_button_style(_theme: &iced::Theme, status: button::Status) -> button::Style {
     let base = button::Style {
-        background: Some(Background::Color(Color::from_rgba(0.75, 0.38, 0.42, 0.15))),
+        background: Some(Background::Color(Color::from_rgba(0.85, 0.38, 0.42, 0.15))),
         border: Border {
             color: ACCENT_RED,
             width: 1.0,
-            radius: Radius::from(4.0),
+            radius: Radius::from(6.0),
         },
         text_color: ACCENT_RED,
         ..Default::default()
@@ -389,7 +496,7 @@ pub fn wipe_button_style(_theme: &iced::Theme, status: button::Status) -> button
     match status {
         button::Status::Active => base,
         button::Status::Hovered | button::Status::Pressed => button::Style {
-            background: Some(Background::Color(Color::from_rgba(0.75, 0.38, 0.42, 0.30))),
+            background: Some(Background::Color(Color::from_rgba(0.85, 0.38, 0.42, 0.30))),
             ..base
         },
         button::Status::Disabled => base,

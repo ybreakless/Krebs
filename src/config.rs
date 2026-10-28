@@ -60,6 +60,10 @@ pub struct AppConfig {
     pub app_mode: String, // "writing", "whiteboard"
     #[serde(default = "default_paper_pattern")]
     pub paper_pattern: String, // "dot", "ruled", "grid", "blank"
+    #[serde(default = "default_accent_color")]
+    pub accent_color: String, // "cyan", "amber", "green", "white", "rose"
+    #[serde(default)]
+    pub has_seen_tour: bool,
 }
 
 fn default_canvas_width_mode() -> String {
@@ -76,6 +80,9 @@ fn default_app_mode() -> String {
 }
 fn default_paper_pattern() -> String {
     "dot".to_string()
+}
+fn default_accent_color() -> String {
+    "cyan".to_string()
 }
 
 impl Default for AppConfig {
@@ -101,6 +108,8 @@ impl Default for AppConfig {
             view_mode: "edit".to_string(),
             app_mode: "writing".to_string(),
             paper_pattern: "dot".to_string(),
+            accent_color: "cyan".to_string(),
+            has_seen_tour: false,
         }
     }
 }

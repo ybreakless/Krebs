@@ -283,6 +283,28 @@ fn flush_paragraph<'a, Message: 'a>(
         return;
     }
 
+    let all_normal = spans.iter().all(|s| matches!(s.style, InlineStyle::Normal));
+    if all_normal {
+        let full_text: String = spans.drain(..).map(|s| s.text).collect();
+        let p_text = text(full_text)
+            .size(body_size)
+            .font(base_font)
+            .color(TEXT_PRIMARY)
+            .wrapping(iced::widget::text::Wrapping::Word);
+
+        let p_container = container(p_text)
+            .width(Length::Fill)
+            .padding(iced::Padding {
+                top: 4.0,
+                bottom: 4.0,
+                left: 0.0,
+                right: 0.0,
+            });
+
+        elements.push(p_container.into());
+        return;
+    }
+
     // Check if paragraph is RTL (Persian)
     let full_text = spans.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join("");
     let _is_rtl = detect_paragraph_direction(&full_text) == unicode_bidi::Direction::Rtl;
@@ -308,7 +330,8 @@ fn flush_paragraph<'a, Message: 'a>(
         let text_el = text(span.text)
             .size(body_size)
             .font(span_font)
-            .color(color);
+            .color(color)
+            .wrapping(iced::widget::text::Wrapping::Word);
 
         if matches!(span.style, InlineStyle::Code) {
             span_widgets.push(

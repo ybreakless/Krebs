@@ -3,6 +3,7 @@
 pub mod config;
 pub mod editor;
 pub mod export;
+pub mod icons;
 pub mod markdown_view;
 pub mod sidebar;
 pub mod theme;
@@ -18,7 +19,7 @@ use iced::font;
 use iced::keyboard::{self, Key, Modifiers};
 use iced::mouse;
 use iced::widget::{
-    button, center, column, container, row, scrollable, stack, text, text_editor, text_input, Space,
+    button, center, column, container, mouse_area, row, scrollable, stack, text, text_editor, text_input, Space,
 };
 use iced::window;
 use iced::{Alignment, Color, Element, Font, Length, Size, Subscription, Task, Theme};
@@ -30,12 +31,13 @@ use editor::{
     DirectionMode, DocumentStats, EditorHistory,
 };
 use sidebar::{view_left_rail, view_right_drawer, SidebarAction};
+use crate::icons::*;
 use theme::{
-    active_tool_button_style, banner_container_style, canvas_container_style,
+    active_tool_button_style, banner_container_style, canvas_container_style, card_container_style,
     modal_container_style, rail_button_style, search_container_style,
     tab_active_button_style, tab_inactive_button_style, text_editor_style, text_input_style,
     toolbar_floating_style, wipe_button_style, ACCENT_AMBER, ACCENT_CYAN, ACCENT_GREEN,
-    ACCENT_RED, BORDER_COLOR, RAIL_BG, TEXT_MUTED, TEXT_PRIMARY,
+    ACCENT_RED, BORDER_COLOR, RAIL_BG, TEXT_MUTED, TEXT_PRIMARY, AccentChoice, ThemeMode,
 };
 use whiteboard::{PaperPattern, WhiteboardCanvas, WhiteboardMessage, WhiteboardState, WhiteboardTool};
 
@@ -283,6 +285,12 @@ struct Krebs {
     app_mode: AppMode,
     whiteboard: WhiteboardState,
     search: SearchState,
+    theme_mode: ThemeMode,
+    accent_choice: AccentChoice,
+    show_theme_modal: bool,
+    show_tour_modal: bool,
+    tour_step: usize,
+    is_maximized: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -302,6 +310,19 @@ enum Message {
     CloseFontModal,
     SelectFont(FontChoice),
     ToggleFontModal,
+    ToggleThemeModal,
+    CloseThemeModal,
+    SelectTheme(ThemeMode),
+    SelectAccent(AccentChoice),
+    ToggleTourModal,
+    CloseTourModal,
+    TourNext,
+    TourPrev,
+    TourFinish,
+    WindowMinimize,
+    WindowToggleMaximize,
+    WindowClose,
+    WindowDrag,
     SetAppMode(AppMode),
     SetViewMode(ViewMode),
     CycleWidthMode,
@@ -361,7 +382,8 @@ impl Krebs {
 
         if let Some(path) = initial_file {
             if path.exists() {
-                if let Ok(content) = std::fs::read_to_string(&path) {
+                if let Ok(raw) = std::fs::read_to_string(&path) {
+                        let content = raw.replace('\t', "    ");
                     initial_text = content;
                     loaded_path = Some(path);
                 }
@@ -379,9 +401,14 @@ impl Krebs {
             }
         }
 
+        initial_text = initial_text.replace('\t', "    ");
         let stats = DocumentStats::compute(&initial_text);
         let content = text_editor::Content::with_text(&initial_text);
         let now = Instant::now();
+
+        let theme_mode = ThemeMode::from_str_name(&config.theme);
+        let accent_choice = AccentChoice::from_str_name(&config.accent_color);
+        let show_tour_modal = !config.has_seen_tour;
 
         let app = Self {
             config,
@@ -412,6 +439,12 @@ impl Krebs {
             app_mode,
             whiteboard,
             search: SearchState::default(),
+            theme_mode,
+            accent_choice,
+            show_theme_modal: false,
+            show_tour_modal,
+            tour_step: 0,
+            is_maximized: false,
         };
 
         let load_fonts_task = Task::batch(vec![
@@ -497,6 +530,85 @@ impl Krebs {
                 self.show_font_modal = false;
                 self.notify(format!("Font: {}", choice.display_name()));
                 Task::none()
+            }
+
+            Message::ToggleThemeModal => {
+                self.show_theme_modal = !self.show_theme_modal;
+                Task::none()
+            }
+
+            Message::CloseThemeModal => {
+                self.show_theme_modal = false;
+                Task::none()
+            }
+
+            Message::SelectTheme(t) => {
+                self.theme_mode = t;
+                self.config.theme = t.to_str_name().to_string();
+                let _ = self.config.save();
+                self.notify(format!("Theme: {}", t.display_name()));
+                Task::none()
+            }
+
+            Message::SelectAccent(a) => {
+                self.accent_choice = a;
+                self.config.accent_color = a.to_str_name().to_string();
+                let _ = self.config.save();
+                self.notify(format!("Accent: {}", a.display_name()));
+                Task::none()
+            }
+
+            Message::ToggleTourModal => {
+                self.show_tour_modal = !self.show_tour_modal;
+                self.tour_step = 0;
+                Task::none()
+            }
+
+            Message::CloseTourModal => {
+                self.show_tour_modal = false;
+                Task::none()
+            }
+
+            Message::TourNext => {
+                if self.tour_step < 3 {
+                    self.tour_step += 1;
+                } else {
+                    self.show_tour_modal = false;
+                    self.config.has_seen_tour = true;
+                    let _ = self.config.save();
+                }
+                Task::none()
+            }
+
+            Message::TourPrev => {
+                if self.tour_step > 0 {
+                    self.tour_step -= 1;
+                }
+                Task::none()
+            }
+
+            Message::TourFinish => {
+                self.show_tour_modal = false;
+                self.config.has_seen_tour = true;
+                let _ = self.config.save();
+                Task::none()
+            }
+
+            Message::WindowMinimize => {
+                window::get_latest().and_then(|id| window::minimize(id, true))
+            }
+
+            Message::WindowToggleMaximize => {
+                self.is_maximized = !self.is_maximized;
+                window::get_latest().and_then(|id| window::toggle_maximize(id))
+            }
+
+            Message::WindowClose => {
+                window::get_latest().and_then(window::close)
+            }
+
+            Message::WindowDrag => {
+                window::get_latest().and_then(window::drag)
             }
 
             Message::ToggleSearch => {
@@ -617,11 +729,16 @@ impl Krebs {
 
                 let modified_action = match &action {
                     text_editor::Action::Edit(text_editor::Edit::Insert(c)) => {
-                        let normalized_c = normalize_persian_char(*c);
-                        text_editor::Action::Edit(text_editor::Edit::Insert(normalized_c))
+                        if *c == '\t' {
+                            text_editor::Action::Edit(text_editor::Edit::Paste(Arc::new("    ".to_string())))
+                        } else {
+                            let normalized_c = normalize_persian_char(*c);
+                            text_editor::Action::Edit(text_editor::Edit::Insert(normalized_c))
+                        }
                     }
                     text_editor::Action::Edit(text_editor::Edit::Paste(arc_str)) => {
-                        let normalized_str = normalize_persian_string(arc_str);
+                        let replaced = arc_str.replace('\t', "    ");
+                        let normalized_str = normalize_persian_string(&replaced);
                         text_editor::Action::Edit(text_editor::Edit::Paste(Arc::new(normalized_str)))
                     }
                     _ => action,
@@ -659,7 +776,8 @@ impl Krebs {
 
             Message::FileOpened(path_opt) => {
                 if let Some(path) = path_opt {
-                    if let Ok(content) = std::fs::read_to_string(&path) {
+                    if let Ok(raw) = std::fs::read_to_string(&path) {
+                        let content = raw.replace('\t', "    ");
                         self.content = text_editor::Content::with_text(&content);
                         self.stats = DocumentStats::compute(&content);
                         self.current_file_path = Some(path.clone());
@@ -684,7 +802,8 @@ impl Krebs {
 
             Message::FileDropped(path) => {
                 if path.is_file() {
-                    if let Ok(content) = std::fs::read_to_string(&path) {
+                    if let Ok(raw) = std::fs::read_to_string(&path) {
+                        let content = raw.replace('\t', "    ");
                         self.content = text_editor::Content::with_text(&content);
                         self.stats = DocumentStats::compute(&content);
                         self.current_file_path = Some(path.clone());
@@ -798,7 +917,8 @@ impl Krebs {
 
             Message::ReloadFromDisk => {
                 if let Some(ref path) = self.current_file_path {
-                    if let Ok(content) = std::fs::read_to_string(path) {
+                    if let Ok(raw) = std::fs::read_to_string(path) {
+                        let content = raw.replace('\t', "    ");
                         self.content = text_editor::Content::with_text(&content);
                         self.stats = DocumentStats::compute(&content);
                         self.is_dirty = false;
@@ -936,8 +1056,7 @@ impl Krebs {
             }
 
             SidebarAction::ToggleShortcutsModal => {
-                self.show_shortcuts_modal = !self.show_shortcuts_modal;
-                Task::none()
+                self.update(Message::ToggleTourModal)
             }
 
             SidebarAction::FormatHeading1 => {
@@ -1069,6 +1188,9 @@ impl Krebs {
                 Key::Character(ref s) if s.eq_ignore_ascii_case("f") => {
                     return self.update(Message::ToggleSearch);
                 }
+                Key::Character(ref s) if s.eq_ignore_ascii_case("t") => {
+                    return self.update(Message::ToggleThemeModal);
+                }
                 Key::Character(ref s) if s.eq_ignore_ascii_case("w") => {
                     return self.update(Message::CycleWidthMode);
                 }
@@ -1153,12 +1275,23 @@ impl Krebs {
             return Task::none();
         }
 
+        if matches!(key, Key::Named(keyboard::key::Named::F11)) {
+            return self.update(Message::WindowToggleMaximize);
+        }
+
         if matches!(key, Key::Named(keyboard::key::Named::F1)) {
-            self.show_shortcuts_modal = !self.show_shortcuts_modal;
-            return Task::none();
+            return self.update(Message::ToggleTourModal);
         }
 
         if matches!(key, Key::Named(keyboard::key::Named::Escape)) {
+            if self.show_tour_modal {
+                self.show_tour_modal = false;
+                return Task::none();
+            }
+            if self.show_theme_modal {
+                self.show_theme_modal = false;
+                return Task::none();
+            }
             if self.search.is_open {
                 self.search.is_open = false;
                 return Task::none();
@@ -1354,6 +1487,32 @@ impl Krebs {
             );
         }
 
+        if self.show_theme_modal {
+            root_stack = root_stack.push(
+                container(self.view_theme_modal())
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .center(Length::Fill)
+                    .style(|_t| container::Style {
+                        background: Some(iced::Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.65))),
+                        ..Default::default()
+                    }),
+            );
+        }
+
+        if self.show_tour_modal {
+            root_stack = root_stack.push(
+                container(self.view_tour_modal())
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .center(Length::Fill)
+                    .style(|_t| container::Style {
+                        background: Some(iced::Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.70))),
+                        ..Default::default()
+                    }),
+            );
+        }
+
         root_stack.into()
     }
 
@@ -1363,6 +1522,8 @@ impl Krebs {
             .font(active_font)
             .size(base_font_size)
             .style(text_editor_style)
+            .wrapping(iced::widget::text::Wrapping::Word)
+            .height(Length::Fill)
             .placeholder("No vaults, no plugins, just you and the words...\nBegin writing your notes or exam essay here.")
             .on_action(Message::EditorAction);
 
@@ -1491,7 +1652,8 @@ impl Krebs {
             studio_col = studio_col.push(banner);
         }
         studio_col = studio_col.push(
-            container(center(center_column))
+            container(center_column)
+                .center_x(Length::Fill)
                 .width(Length::Fill)
                 .height(Length::Fill),
         );
@@ -1524,74 +1686,169 @@ impl Krebs {
     }
 
     fn view_top_header<'a>(&'a self) -> Element<'a, Message> {
+        let accent = self.accent_choice.color();
+
         // Mode Switcher Chips: Writing Studio vs Whiteboard
         let write_tab_style = if self.app_mode == AppMode::Writing {
             tab_active_button_style
         } else {
             tab_inactive_button_style
         };
-        let btn_write = button(text("📝 Write").size(11))
-            .on_press(Message::SetAppMode(AppMode::Writing))
-            .style(write_tab_style)
-            .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 10.0, right: 10.0 });
+        let write_icon_color = if self.app_mode == AppMode::Writing { accent } else { TEXT_MUTED };
+        let btn_write = button(
+            row![
+                render_svg_icon(SVG_WRITE, 13, write_icon_color),
+                text("Write").size(11),
+            ]
+            .spacing(5)
+            .align_y(Alignment::Center),
+        )
+        .on_press(Message::SetAppMode(AppMode::Writing))
+        .style(write_tab_style)
+        .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 10.0, right: 10.0 });
 
         let board_tab_style = if self.app_mode == AppMode::Whiteboard {
             tab_active_button_style
         } else {
             tab_inactive_button_style
         };
-        let btn_board = button(text("🎨 Whiteboard").size(11))
-            .on_press(Message::SetAppMode(AppMode::Whiteboard))
-            .style(board_tab_style)
-            .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 10.0, right: 10.0 });
+        let board_icon_color = if self.app_mode == AppMode::Whiteboard { accent } else { TEXT_MUTED };
+        let btn_board = button(
+            row![
+                render_svg_icon(SVG_WHITEBOARD, 13, board_icon_color),
+                text("Whiteboard").size(11),
+            ]
+            .spacing(5)
+            .align_y(Alignment::Center),
+        )
+        .on_press(Message::SetAppMode(AppMode::Whiteboard))
+        .style(board_tab_style)
+        .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 10.0, right: 10.0 });
 
         // View Mode Segment: Edit | Split | Preview
-        let btn_mode_edit = button(text("Edit").size(11))
-            .on_press(Message::SetViewMode(ViewMode::Edit))
-            .style(if self.view_mode == ViewMode::Edit { tab_active_button_style } else { tab_inactive_button_style })
-            .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 8.0, right: 8.0 });
+        let edit_color = if self.view_mode == ViewMode::Edit { accent } else { TEXT_MUTED };
+        let btn_mode_edit = button(
+            row![
+                render_svg_icon(SVG_WRITE, 12, edit_color),
+                text("Edit").size(11),
+            ]
+            .spacing(4)
+            .align_y(Alignment::Center),
+        )
+        .on_press(Message::SetViewMode(ViewMode::Edit))
+        .style(if self.view_mode == ViewMode::Edit { tab_active_button_style } else { tab_inactive_button_style })
+        .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 8.0, right: 8.0 });
 
-        let btn_mode_split = button(text("◫ Live Split").size(11))
-            .on_press(Message::SetViewMode(ViewMode::Split))
-            .style(if self.view_mode == ViewMode::Split { tab_active_button_style } else { tab_inactive_button_style })
-            .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 8.0, right: 8.0 });
+        let split_color = if self.view_mode == ViewMode::Split { accent } else { TEXT_MUTED };
+        let btn_mode_split = button(
+            row![
+                render_svg_icon(SVG_SPLIT, 12, split_color),
+                text("Live Split").size(11),
+            ]
+            .spacing(4)
+            .align_y(Alignment::Center),
+        )
+        .on_press(Message::SetViewMode(ViewMode::Split))
+        .style(if self.view_mode == ViewMode::Split { tab_active_button_style } else { tab_inactive_button_style })
+        .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 8.0, right: 8.0 });
 
-        let btn_mode_preview = button(text("👁️ Preview").size(11))
-            .on_press(Message::SetViewMode(ViewMode::Preview))
-            .style(if self.view_mode == ViewMode::Preview { tab_active_button_style } else { tab_inactive_button_style })
-            .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 8.0, right: 8.0 });
+        let prev_color = if self.view_mode == ViewMode::Preview { accent } else { TEXT_MUTED };
+        let btn_mode_preview = button(
+            row![
+                render_svg_icon(SVG_PREVIEW, 12, prev_color),
+                text("Preview").size(11),
+            ]
+            .spacing(4)
+            .align_y(Alignment::Center),
+        )
+        .on_press(Message::SetViewMode(ViewMode::Preview))
+        .style(if self.view_mode == ViewMode::Preview { tab_active_button_style } else { tab_inactive_button_style })
+        .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 8.0, right: 8.0 });
 
         // Width Cycle Button
-        let btn_width = button(text(format!("↔ {}", self.canvas_width_mode.label())).size(11))
-            .on_press(Message::CycleWidthMode)
-            .style(rail_button_style)
-            .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 8.0, right: 8.0 });
+        let btn_width = button(
+            row![
+                render_svg_icon(SVG_WIDTH, 12, TEXT_MUTED),
+                text(self.canvas_width_mode.label()).size(11),
+            ]
+            .spacing(4)
+            .align_y(Alignment::Center),
+        )
+        .on_press(Message::CycleWidthMode)
+        .style(rail_button_style)
+        .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 8.0, right: 8.0 });
 
         // Font Switcher Button
-        let btn_font = button(text(format!("🔤 {}", self.font_choice.display_name())).size(11))
-            .on_press(Message::ToggleFontModal)
-            .style(rail_button_style)
-            .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 8.0, right: 8.0 });
+        let btn_font = button(
+            row![
+                render_svg_icon(SVG_FONT, 12, TEXT_MUTED),
+                text(self.font_choice.display_name()).size(11),
+            ]
+            .spacing(4)
+            .align_y(Alignment::Center),
+        )
+        .on_press(Message::ToggleFontModal)
+        .style(rail_button_style)
+        .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 8.0, right: 8.0 });
 
         // Minimal Zen Clock
         let mins = self.timer_remaining_secs / 60;
         let secs = self.timer_remaining_secs % 60;
         let clock_str = format!("{:02}:{:02}", mins, secs);
         let clock_color = if self.timer_is_running {
-            ACCENT_CYAN
+            accent
         } else {
             TEXT_MUTED
         };
 
-        let btn_clock = button(text(format!("⏱ {}", clock_str)).size(11).color(clock_color))
-            .on_press(Message::ZenTimerToggle)
-            .style(rail_button_style)
-            .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 8.0, right: 8.0 });
+        let btn_clock = button(
+            row![
+                render_svg_icon(SVG_TIMER, 12, clock_color),
+                text(clock_str).size(11).color(clock_color),
+            ]
+            .spacing(4)
+            .align_y(Alignment::Center),
+        )
+        .on_press(Message::ZenTimerToggle)
+        .style(rail_button_style)
+        .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 8.0, right: 8.0 });
 
-        let btn_clock_presets = button(text("▾").size(10).color(TEXT_MUTED))
-            .on_press(Message::ZenTimerTogglePresets)
+        let btn_clock_presets = button(
+            center(render_svg_icon(SVG_CHEVRON_DOWN, 10, TEXT_MUTED))
+        )
+        .on_press(Message::ZenTimerTogglePresets)
+        .style(rail_button_style)
+        .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 4.0, right: 4.0 });
+
+        let btn_theme = button(center(render_svg_icon(SVG_THEME, 14, TEXT_MUTED)))
+            .on_press(Message::ToggleThemeModal)
             .style(rail_button_style)
-            .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 4.0, right: 4.0 });
+            .padding(iced::Padding::new(4.0));
+
+        let btn_tour = button(center(render_svg_icon(SVG_TOUR, 14, TEXT_MUTED)))
+            .on_press(Message::ToggleTourModal)
+            .style(rail_button_style)
+            .padding(iced::Padding::new(4.0));
+
+        let btn_min = button(center(render_svg_icon(SVG_MINIMIZE, 12, TEXT_MUTED)))
+            .on_press(Message::WindowMinimize)
+            .style(rail_button_style)
+            .width(28)
+            .height(24);
+
+        let btn_max = button(center(render_svg_icon(SVG_FULLSCREEN, 12, TEXT_MUTED)))
+            .on_press(Message::WindowToggleMaximize)
+            .style(rail_button_style)
+            .width(28)
+            .height(24);
+
+        let btn_close = button(center(render_svg_icon(SVG_CLOSE, 12, TEXT_MUTED)))
+            .on_press(Message::WindowClose)
+            .style(rail_button_style)
+            .width(28)
+            .height(24);
+
+        let drag_spacer = mouse_area(Space::with_width(Length::Fill)).on_press(Message::WindowDrag);
 
         let mut header_row = row![
             btn_write,
@@ -1600,11 +1857,18 @@ impl Krebs {
             btn_mode_edit,
             btn_mode_split,
             btn_mode_preview,
-            Space::with_width(Length::Fill),
+            drag_spacer,
             btn_width,
             btn_font,
             btn_clock,
             btn_clock_presets,
+            Space::with_width(8),
+            btn_theme,
+            btn_tour,
+            Space::with_width(8),
+            btn_min,
+            btn_max,
+            btn_close,
         ]
         .spacing(4)
         .align_y(Alignment::Center);
@@ -1614,7 +1878,7 @@ impl Krebs {
             let p25 = button(text("25m").size(10)).on_press(Message::ZenTimerSet(1500)).style(rail_button_style).padding(iced::Padding::new(3.0));
             let p45 = button(text("45m").size(10)).on_press(Message::ZenTimerSet(2700)).style(rail_button_style).padding(iced::Padding::new(3.0));
             let p60 = button(text("60m").size(10)).on_press(Message::ZenTimerSet(3600)).style(rail_button_style).padding(iced::Padding::new(3.0));
-            let rst = button(text("↺").size(10)).on_press(Message::Sidebar(SidebarAction::TimerReset)).style(rail_button_style).padding(iced::Padding::new(3.0));
+            let rst = button(center(render_svg_icon(SVG_RESET, 11, TEXT_MUTED))).on_press(Message::Sidebar(SidebarAction::TimerReset)).style(rail_button_style).padding(iced::Padding::new(3.0));
 
             header_row = header_row.push(row![p15, p25, p45, p60, rst].spacing(2).align_y(Alignment::Center));
         }
@@ -1665,13 +1929,13 @@ impl Krebs {
             .style(rail_button_style)
             .padding(iced::Padding::new(4.0));
 
-        let btn_close = button(text("✕").size(11))
+        let btn_close = button(center(render_svg_icon(SVG_CLOSE, 11, TEXT_MUTED)))
             .on_press(Message::CloseSearch)
             .style(rail_button_style)
             .padding(iced::Padding::new(4.0));
 
         let search_row = row![
-            text("🔍").size(12).color(ACCENT_CYAN),
+            render_svg_icon(SVG_SEARCH, 13, ACCENT_CYAN),
             input,
             text(match_label).size(11).color(ACCENT_CYAN),
             btn_prev,
@@ -1688,29 +1952,60 @@ impl Krebs {
     }
 
     fn view_whiteboard_toolbar<'a>(&'a self) -> Element<'a, Message> {
-        let btn_write = button(text("📝 Write Studio").size(11))
-            .on_press(Message::SetAppMode(AppMode::Writing))
-            .style(tab_inactive_button_style)
-            .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 8.0, right: 8.0 });
+        let btn_write = button(
+            row![
+                render_svg_icon(SVG_WRITE, 13, TEXT_MUTED),
+                text("Write Studio").size(11),
+            ]
+            .spacing(5)
+            .align_y(Alignment::Center),
+        )
+        .on_press(Message::SetAppMode(AppMode::Writing))
+        .style(tab_inactive_button_style)
+        .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 8.0, right: 8.0 });
 
         let is_pen = self.whiteboard.active_tool == WhiteboardTool::Pen;
         let is_hl = self.whiteboard.active_tool == WhiteboardTool::Highlighter;
         let is_er = self.whiteboard.active_tool == WhiteboardTool::Eraser;
 
-        let btn_pen = button(text("✏️ Pen").size(11))
-            .on_press(Message::WhiteboardToolSelect(WhiteboardTool::Pen))
-            .style(if is_pen { active_tool_button_style } else { rail_button_style })
-            .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 8.0, right: 8.0 });
+        let pen_color = if is_pen { ACCENT_CYAN } else { TEXT_MUTED };
+        let btn_pen = button(
+            row![
+                render_svg_icon(SVG_PEN, 13, pen_color),
+                text("Pen").size(11),
+            ]
+            .spacing(4)
+            .align_y(Alignment::Center),
+        )
+        .on_press(Message::WhiteboardToolSelect(WhiteboardTool::Pen))
+        .style(if is_pen { active_tool_button_style } else { rail_button_style })
+        .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 8.0, right: 8.0 });
 
-        let btn_hl = button(text("🖍️ Highlighter").size(11))
-            .on_press(Message::WhiteboardToolSelect(WhiteboardTool::Highlighter))
-            .style(if is_hl { active_tool_button_style } else { rail_button_style })
-            .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 8.0, right: 8.0 });
+        let hl_color = if is_hl { ACCENT_CYAN } else { TEXT_MUTED };
+        let btn_hl = button(
+            row![
+                render_svg_icon(SVG_HIGHLIGHTER, 13, hl_color),
+                text("Highlighter").size(11),
+            ]
+            .spacing(4)
+            .align_y(Alignment::Center),
+        )
+        .on_press(Message::WhiteboardToolSelect(WhiteboardTool::Highlighter))
+        .style(if is_hl { active_tool_button_style } else { rail_button_style })
+        .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 8.0, right: 8.0 });
 
-        let btn_eraser = button(text("🧹 Eraser").size(11))
-            .on_press(Message::WhiteboardToolSelect(WhiteboardTool::Eraser))
-            .style(if is_er { active_tool_button_style } else { rail_button_style })
-            .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 8.0, right: 8.0 });
+        let er_color = if is_er { ACCENT_CYAN } else { TEXT_MUTED };
+        let btn_eraser = button(
+            row![
+                render_svg_icon(SVG_ERASER, 13, er_color),
+                text("Eraser").size(11),
+            ]
+            .spacing(4)
+            .align_y(Alignment::Center),
+        )
+        .on_press(Message::WhiteboardToolSelect(WhiteboardTool::Eraser))
+        .style(if is_er { active_tool_button_style } else { rail_button_style })
+        .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 8.0, right: 8.0 });
 
         // Stroke Width chips
         let w_fine = button(text("1.5px").size(10))
@@ -1775,21 +2070,28 @@ impl Krebs {
             .style(if self.whiteboard.paper_pattern == PaperPattern::Blank { active_tool_button_style } else { rail_button_style })
             .padding(iced::Padding::new(3.0));
 
-        let btn_undo = button(text("↶ Undo").size(10))
+        let btn_undo = button(center(render_svg_icon(SVG_UNDO, 12, TEXT_MUTED)))
             .on_press(Message::WhiteboardUndo)
             .style(rail_button_style)
-            .padding(iced::Padding::new(3.0));
+            .padding(iced::Padding::new(4.0));
 
-        let btn_redo = button(text("↷ Redo").size(10))
+        let btn_redo = button(center(render_svg_icon(SVG_REDO, 12, TEXT_MUTED)))
             .on_press(Message::WhiteboardRedo)
             .style(rail_button_style)
-            .padding(iced::Padding::new(3.0));
+            .padding(iced::Padding::new(4.0));
 
         // Student Wipe / Delete Work Action
-        let btn_wipe = button(text("🗑️ Wipe Board").size(11))
-            .on_press(Message::WhiteboardClear)
-            .style(wipe_button_style)
-            .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 8.0, right: 8.0 });
+        let btn_wipe = button(
+            row![
+                render_svg_icon(SVG_WIPE, 12, ACCENT_RED),
+                text("Wipe Board").size(11),
+            ]
+            .spacing(5)
+            .align_y(Alignment::Center),
+        )
+        .on_press(Message::WhiteboardClear)
+        .style(wipe_button_style)
+        .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 8.0, right: 8.0 });
 
         let tb_row = row![
             btn_write,
@@ -1858,7 +2160,7 @@ impl Krebs {
         });
 
         let mut status_row = row![
-            text(file_label).size(10).color(TEXT_MUTED),
+            text(file_label).size(10).color(TEXT_PRIMARY),
             Space::with_width(16),
         ]
         .align_y(Alignment::Center);
@@ -1896,7 +2198,7 @@ impl Krebs {
         let title_row = row![
             text("🔤 Select Typography").size(15).color(ACCENT_CYAN),
             Space::with_width(Length::Fill),
-            button(text("✕").size(12))
+            button(center(render_svg_icon(SVG_CLOSE, 12, TEXT_MUTED)))
                 .on_press(Message::CloseFontModal)
                 .style(rail_button_style)
                 .width(28)
@@ -1951,7 +2253,7 @@ impl Krebs {
                 .size(15)
                 .color(ACCENT_CYAN),
             Space::with_width(Length::Fill),
-            button(text("✕").size(12))
+            button(center(render_svg_icon(SVG_CLOSE, 12, TEXT_MUTED)))
                 .on_press(Message::CloseShortcutsModal)
                 .style(rail_button_style)
                 .width(28)
@@ -1991,6 +2293,213 @@ impl Krebs {
         container(content_col)
             .width(520)
             .padding(18)
+            .style(modal_container_style)
+            .into()
+    }
+
+    fn view_tour_modal<'a>(&self) -> Element<'a, Message> {
+        let title_row = row![
+            text("🦀 Welcome to Krebs Writing & Whiteboard Studio")
+                .size(15)
+                .color(ACCENT_CYAN),
+            Space::with_width(Length::Fill),
+            button(center(render_svg_icon(SVG_CLOSE, 12, TEXT_MUTED)))
+                .on_press(Message::CloseTourModal)
+                .style(rail_button_style)
+                .width(28)
+                .height(28),
+        ]
+        .align_y(Alignment::Center);
+
+        let (step_title, step_desc, step_tag) = match self.tour_step {
+            0 => (
+                "1. Trilingual & Distraction-Free Writing",
+                "Pure text focus with HarfBuzz/Swash text shaping. Write in English, German (with dedicated äöüß chords or Alt shortcuts), or Persian/Farsi with full RTL bidirectional support and Shift+Space ZWNJ (نیم‌فاصله). Each paragraph automatically detects its direction.",
+                "Shortcuts: Alt+a/o/u/s for German  •  Shift+Space for ZWNJ",
+            ),
+            1 => (
+                "2. Markdown View & Split Canvas",
+                "Draft your thoughts and instantly view formatted output. Easily switch between Edit (Ctrl+1), Live Split (Ctrl+2), and Full Preview (Ctrl+3). Cycle between Standard, Wide, and Full-Width writing columns via Ctrl+W.",
+                "Shortcuts: Ctrl+1/2/3 for Views  •  Ctrl+W for Width  •  Ctrl+B/I for formatting",
+            ),
+            2 => (
+                "3. Infinite Whiteboard Studio",
+                "Switch into Whiteboard Studio (Ctrl+M) anytime for freehand notes, sketching, and diagramming. Designed for tablet and pen stylus users with low latency, multiple paper templates (Math Grid, Ruled, Dot, Blank), and one-click Wipe Board.",
+                "Shortcuts: Ctrl+M to toggle Whiteboard  •  1-click Wipe to delete scratch work",
+            ),
+            _ => (
+                "4. Exam Essay Training & Portable Storage",
+                "Boost your writing speed with the Zen Countdown Timer and Word Count Target Tracker (green when in target range, amber when outside). Access German B2/C1 exam Redemittel connectors anytime from the right drawer (Ctrl+E). Everything is stored locally in ./krebs_data/.",
+                "Shortcuts: Ctrl+E for Exam Drawer  •  Ctrl+S to Save  •  Ctrl+P to Print/Export",
+            ),
+        };
+
+        let step_counter = text(format!("Step {} of 4", self.tour_step + 1))
+            .size(11)
+            .color(TEXT_MUTED);
+
+        let content_card = column![
+            text(step_title).size(14).color(TEXT_PRIMARY),
+            text(step_desc).size(12).color(Color::from_rgb(0.80, 0.84, 0.90)),
+            container(text(step_tag).size(11).color(ACCENT_AMBER))
+                .padding(8)
+                .width(Length::Fill)
+                .style(card_container_style),
+        ]
+        .spacing(10);
+
+        let mut btn_prev = button(text("← Previous").size(11))
+            .style(rail_button_style)
+            .padding(iced::Padding { top: 6.0, bottom: 6.0, left: 12.0, right: 12.0 });
+        if self.tour_step > 0 {
+            btn_prev = btn_prev.on_press(Message::TourPrev);
+        }
+
+        let next_label = if self.tour_step < 3 { "Next →" } else { "Get Started 🚀" };
+        let next_msg = if self.tour_step < 3 { Message::TourNext } else { Message::TourFinish };
+        let btn_next = button(text(next_label).size(11))
+            .on_press(next_msg)
+            .style(tab_active_button_style)
+            .padding(iced::Padding { top: 6.0, bottom: 6.0, left: 14.0, right: 14.0 });
+
+        let footer_row = row![
+            step_counter,
+            Space::with_width(Length::Fill),
+            btn_prev,
+            btn_next,
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center);
+
+        let modal_col = column![
+            title_row,
+            create_divider_simple(),
+            content_card,
+            create_divider_simple(),
+            footer_row,
+        ]
+        .spacing(14);
+
+        container(modal_col)
+            .width(520)
+            .padding(20)
+            .style(modal_container_style)
+            .into()
+    }
+
+    fn view_theme_modal<'a>(&self) -> Element<'a, Message> {
+        let title_row = row![
+            text("🎨 Customize Theme & Colors").size(15).color(ACCENT_CYAN),
+            Space::with_width(Length::Fill),
+            button(center(render_svg_icon(SVG_CLOSE, 12, TEXT_MUTED)))
+                .on_press(Message::CloseThemeModal)
+                .style(rail_button_style)
+                .width(28)
+                .height(28),
+        ]
+        .align_y(Alignment::Center);
+
+        let themes = [
+            (ThemeMode::OmarchyDark, "Omarchy Dark", "Matte charcoal canvas with obsidian rails"),
+            (ThemeMode::OledBlack, "OLED Pure Black", "True deep black for high contrast AMOLED"),
+            (ThemeMode::DeepSlate, "Deep Slate", "Modern dark slate blue with crisp accents"),
+            (ThemeMode::WarmEspresso, "Warm Espresso", "Warm earthy dark coffee tones"),
+        ];
+
+        let mut theme_list = column![
+            text("CANVAS BACKGROUND MOOD").size(10).color(TEXT_MUTED),
+        ].spacing(6);
+
+        for (tm, name, desc) in themes {
+            let is_sel = self.theme_mode == tm;
+            let btn = button(
+                row![
+                    container(Space::with_width(12))
+                        .width(12)
+                        .height(12)
+                        .style(move |_t| container::Style {
+                            background: Some(iced::Background::Color(tm.canvas_bg())),
+                            border: iced::Border {
+                                color: if is_sel { ACCENT_CYAN } else { BORDER_COLOR },
+                                width: 1.0,
+                                radius: iced::border::Radius::from(6.0),
+                            },
+                            ..Default::default()
+                        }),
+                    column![
+                        text(name).size(12).color(if is_sel { ACCENT_CYAN } else { TEXT_PRIMARY }),
+                        text(desc).size(10).color(TEXT_MUTED),
+                    ]
+                    .spacing(2),
+                    Space::with_width(Length::Fill),
+                    if is_sel { text("✓").size(12).color(ACCENT_CYAN) } else { text("").size(12) },
+                ]
+                .spacing(10)
+                .align_y(Alignment::Center),
+            )
+            .on_press(Message::SelectTheme(tm))
+            .style(if is_sel { active_tool_button_style } else { rail_button_style })
+            .padding(10)
+            .width(Length::Fill);
+
+            theme_list = theme_list.push(btn);
+        }
+
+        let accents = [
+            (AccentChoice::NordicCyan, "Nordic Cyan"),
+            (AccentChoice::AmberSunset, "Amber Sunset"),
+            (AccentChoice::EmeraldMint, "Emerald Mint"),
+            (AccentChoice::NordicFrost, "Nordic Frost"),
+            (AccentChoice::RoseBlush, "Rose Blush"),
+        ];
+
+        let mut accent_row = row![].spacing(8);
+        for (ac, name) in accents {
+            let is_sel = self.accent_choice == ac;
+            let c = ac.color();
+            let btn = button(
+                column![
+                    container(Space::with_width(18))
+                        .width(18)
+                        .height(18)
+                        .style(move |_t| container::Style {
+                            background: Some(iced::Background::Color(c)),
+                            border: iced::Border {
+                                color: if is_sel { Color::WHITE } else { Color::TRANSPARENT },
+                                width: 2.0,
+                                radius: iced::border::Radius::from(9.0),
+                            },
+                            ..Default::default()
+                        }),
+                    text(name).size(9).color(if is_sel { Color::WHITE } else { TEXT_MUTED }),
+                ]
+                .spacing(4)
+                .align_x(Alignment::Center),
+            )
+            .on_press(Message::SelectAccent(ac))
+            .style(rail_button_style)
+            .padding(6);
+
+            accent_row = accent_row.push(btn);
+        }
+
+        let accent_section = column![
+            text("ACCENT HIGHLIGHT COLOR").size(10).color(TEXT_MUTED),
+            accent_row,
+        ].spacing(6);
+
+        let modal_col = column![
+            title_row,
+            create_divider_simple(),
+            theme_list,
+            create_divider_simple(),
+            accent_section,
+        ]
+        .spacing(14);
+
+        container(modal_col)
+            .width(460)
+            .padding(20)
             .style(modal_container_style)
             .into()
     }
@@ -2046,6 +2555,7 @@ fn main() -> iced::Result {
     .window(window::Settings {
         size: Size::new(config.window_width, config.window_height),
         min_size: Some(Size::new(640.0, 420.0)),
+        decorations: false,
         icon: create_app_icon(),
         ..Default::default()
     })
@@ -2122,6 +2632,7 @@ mod tests {
         assert_ne!(app.canvas_width_mode, initial_width);
 
         // 3. Test View mode button
+        let _ = app.update(Message::SetViewMode(ViewMode::Edit));
         assert_eq!(app.view_mode, ViewMode::Edit);
         let _ = app.update(Message::SetViewMode(ViewMode::Split));
         assert_eq!(app.view_mode, ViewMode::Split);
@@ -2182,5 +2693,24 @@ mod tests {
         // 9. Test German umlaut chord button
         let _ = app.update(Message::Sidebar(SidebarAction::InsertGermanChar("ä")));
         assert!(app.content.text().contains("ä"));
+
+        // 10. Test Theme and Accent customization
+        let _ = app.update(Message::SelectTheme(ThemeMode::OledBlack));
+        assert_eq!(app.theme_mode, ThemeMode::OledBlack);
+        let _ = app.update(Message::SelectAccent(AccentChoice::AmberSunset));
+        assert_eq!(app.accent_choice, AccentChoice::AmberSunset);
+
+        // 11. Test Interactive Quick Tour navigation
+        app.show_tour_modal = false;
+        let _ = app.update(Message::ToggleTourModal);
+        assert!(app.show_tour_modal);
+        assert_eq!(app.tour_step, 0);
+        let _ = app.update(Message::TourNext);
+        assert_eq!(app.tour_step, 1);
+        let _ = app.update(Message::TourPrev);
+        assert_eq!(app.tour_step, 0);
+        let _ = app.update(Message::TourFinish);
+        assert!(!app.show_tour_modal);
+        assert!(app.config.has_seen_tour);
     }
 }

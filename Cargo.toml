@@ -10,7 +10,7 @@ name = "krebs"
 path = "src/main.rs"
 
 [dependencies]
-iced = { version = "0.13.1", features = ["advanced", "tokio", "canvas"] }
+iced = { version = "0.13.1", features = ["advanced", "tokio", "canvas", "svg"] }
 unicode-bidi = "0.3"
 rfd = "0.15"
 arboard = "3.4"
@@ -22,3 +22,9 @@ pulldown-cmark = "0.12"
 chrono = "0.4"
 open = "5.4"
 image = { version = "0.25", default-features = false, features = ["png"] }
+
+[dev-dependencies]
+resvg = "0.42"
+usvg = "0.42"
+tiny-skia = "0.11"
+
