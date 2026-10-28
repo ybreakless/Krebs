@@ -64,6 +64,12 @@ pub struct AppConfig {
     pub accent_color: String, // "cyan", "amber", "green", "white", "rose"
     #[serde(default)]
     pub has_seen_tour: bool,
+    #[serde(default = "default_true")]
+    pub show_top_toolbar: bool,
+    #[serde(default = "default_ai_endpoint")]
+    pub ai_endpoint: String,
+    #[serde(default = "default_ai_model")]
+    pub ai_model: String,
 }
 
 fn default_canvas_width_mode() -> String {
@@ -83,6 +89,15 @@ fn default_paper_pattern() -> String {
 }
 fn default_accent_color() -> String {
     "cyan".to_string()
+}
+fn default_true() -> bool {
+    true
+}
+fn default_ai_endpoint() -> String {
+    "http://localhost:11434/v1".to_string()
+}
+fn default_ai_model() -> String {
+    "hermes3".to_string()
 }
 
 impl Default for AppConfig {
@@ -110,6 +125,9 @@ impl Default for AppConfig {
             paper_pattern: "dot".to_string(),
             accent_color: "cyan".to_string(),
             has_seen_tour: false,
+            show_top_toolbar: true,
+            ai_endpoint: "http://localhost:11434/v1".to_string(),
+            ai_model: "hermes3".to_string(),
         }
     }
 }

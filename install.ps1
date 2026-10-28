@@ -69,8 +69,8 @@ if (Test-Path $icoSource) {
 $configPath = Join-Path $dataDir "config.toml"
 if (-not (Test-Path $configPath)) {
     $cfg = @(
-        'window_width = 1150.0',
-        'window_height = 780.0',
+        'window_width = 1200.0',
+        'window_height = 820.0',
         'zoom_level = 1.0',
         'theme = "dark"',
         'target_min_words = 200',
@@ -83,10 +83,28 @@ if (-not (Test-Path $configPath)) {
         'direction_mode = "auto"',
         'smart_quotes_de = true',
         'smart_dashes = true',
-        'canvas_max_width = 72.0'
+        'canvas_max_width = 120.0',
+        'canvas_width_mode = "wide"',
+        'font_choice = "jetbrains_mono"',
+        'view_mode = "edit"',
+        'app_mode = "writing"',
+        'paper_pattern = "dot"',
+        'accent_color = "cyan"',
+        'has_seen_tour = false',
+        'show_top_toolbar = true',
+        'ai_endpoint = "http://localhost:11434/v1"',
+        'ai_model = "hermes3"'
     )
     $cfg -join "`r`n" | Set-Content -Path $configPath -Encoding utf8
     Write-Host "[OK] Initialized default config.toml" -ForegroundColor Green
+} else {
+    # Ensure has_seen_tour = false for new updates so the user experiences the Quick Tour
+    $content = Get-Content -Path $configPath -Raw
+    if ($content -match 'has_seen_tour\s*=\s*true') {
+        $content = $content -replace 'has_seen_tour\s*=\s*true', 'has_seen_tour = false'
+        Set-Content -Path $configPath -Value $content -Encoding utf8
+        Write-Host "[OK] Reset has_seen_tour = false for onboarding tour" -ForegroundColor Green
+    }
 }
 
 # 5. Create Default snippets_de.toml if missing

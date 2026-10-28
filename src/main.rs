@@ -2,6 +2,7 @@
 
 pub mod config;
 pub mod editor;
+pub mod ai;
 pub mod export;
 pub mod icons;
 pub mod markdown_view;
@@ -30,10 +31,12 @@ use editor::{
     insert_zwnj_at_cursor, normalize_persian_char, normalize_persian_string, wrap_markdown_syntax,
     DirectionMode, DocumentStats, EditorHistory,
 };
-use sidebar::{view_left_rail, view_right_drawer, SidebarAction};
+use sidebar::{view_left_rail, SidebarAction};
 use crate::icons::*;
+use ai::{AiAction, AiState};
 use theme::{
     active_tool_button_style, banner_container_style, canvas_container_style, card_container_style,
+    drawer_container_style,
     modal_container_style, rail_button_style, search_container_style,
     tab_active_button_style, tab_inactive_button_style, text_editor_style, text_input_style,
     toolbar_floating_style, wipe_button_style, ACCENT_AMBER, ACCENT_CYAN, ACCENT_GREEN,
@@ -291,6 +294,15 @@ struct Krebs {
     show_tour_modal: bool,
     tour_step: usize,
     is_maximized: bool,
+    show_top_toolbar: bool,
+    ai_state: AiState,
+    right_drawer_tab: RightDrawerTab,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RightDrawerTab {
+    AiCoach,
+    Redemittel,
 }
 
 #[derive(Debug, Clone)]
@@ -310,6 +322,16 @@ enum Message {
     CloseFontModal,
     SelectFont(FontChoice),
     ToggleFontModal,
+    ToggleTopToolbar,
+    ToggleAiDrawer,
+    SetRightDrawerTab(RightDrawerTab),
+    RunAiAction(AiAction),
+    AiCompleted(String, bool),
+    AiCopyFeedback,
+    AiInsertFeedback,
+    AiSetEndpoint(String),
+    AiSetModel(String),
+    AiToggleSettings,
     ToggleThemeModal,
     CloseThemeModal,
     SelectTheme(ThemeMode),
@@ -410,6 +432,10 @@ impl Krebs {
         let accent_choice = AccentChoice::from_str_name(&config.accent_color);
         let show_tour_modal = !config.has_seen_tour;
 
+        let show_top_toolbar = config.show_top_toolbar;
+        let ai_endpoint = config.ai_endpoint.clone();
+        let ai_model = config.ai_model.clone();
+
         let app = Self {
             config,
             snippets,
@@ -445,6 +471,15 @@ impl Krebs {
             show_tour_modal,
             tour_step: 0,
             is_maximized: false,
+            show_top_toolbar,
+            ai_state: AiState {
+                endpoint: ai_endpoint.clone(),
+                model: ai_model.clone(),
+                temp_endpoint: ai_endpoint,
+                temp_model: ai_model,
+                ..Default::default()
+            },
+            right_drawer_tab: RightDrawerTab::AiCoach,
         };
 
         let load_fonts_task = Task::batch(vec![
@@ -532,6 +567,99 @@ impl Krebs {
                 Task::none()
             }
 
+            Message::ToggleTopToolbar => {
+                self.show_top_toolbar = !self.show_top_toolbar;
+                self.config.show_top_toolbar = self.show_top_toolbar;
+                let _ = self.config.save();
+                self.notify(if self.show_top_toolbar {
+                    "Toolbar Visible"
+                } else {
+                    "Zen Mode: Toolbar Hidden (Press Ctrl+H to restore)"
+                });
+                Task::none()
+            }
+
+            Message::ToggleAiDrawer => {
+                self.config.show_right_drawer = !self.config.show_right_drawer;
+                self.right_drawer_tab = RightDrawerTab::AiCoach;
+                let _ = self.config.save();
+                Task::none()
+            }
+
+            Message::SetRightDrawerTab(tab) => {
+                self.right_drawer_tab = tab;
+                Task::none()
+            }
+
+            Message::RunAiAction(action) => {
+                self.ai_state.is_loading = true;
+                self.ai_state.last_action = Some(action);
+                let endpoint = self.ai_state.endpoint.clone();
+                let model = self.ai_state.model.clone();
+                let text = self.content.text();
+                Task::perform(
+                    async move {
+                        ai::run_ai_task(endpoint, model, text, action)
+                    },
+                    |(res, is_offline)| Message::AiCompleted(res, is_offline),
+                )
+            }
+
+            Message::AiCompleted(res, is_offline) => {
+                self.ai_state.is_loading = false;
+                self.ai_state.response_text = res;
+                self.ai_state.is_offline_fallback = is_offline;
+                self.notify(if is_offline {
+                    "Analyzed via Offline Evaluator"
+                } else {
+                    "Hermes AI Analysis Complete"
+                });
+                Task::none()
+            }
+
+            Message::AiCopyFeedback => {
+                if !self.ai_state.response_text.is_empty() {
+                    if let Ok(mut cb) = arboard::Clipboard::new() {
+                        let _ = cb.set_text(&self.ai_state.response_text);
+                        self.notify("Feedback copied to clipboard");
+                    }
+                }
+                Task::none()
+            }
+
+            Message::AiInsertFeedback => {
+                if !self.ai_state.response_text.is_empty() {
+                    let formatted = format!("\n\n---\n{}\n---\n", self.ai_state.response_text);
+                    insert_text_at_cursor(&mut self.content, &formatted);
+                    self.stats = DocumentStats::compute(&self.content.text());
+                    self.notify("Inserted feedback into editor");
+                }
+                Task::none()
+            }
+
+            Message::AiSetEndpoint(val) => {
+                self.ai_state.temp_endpoint = val;
+                Task::none()
+            }
+
+            Message::AiSetModel(val) => {
+                self.ai_state.temp_model = val;
+                Task::none()
+            }
+
+            Message::AiToggleSettings => {
+                self.ai_state.show_settings = !self.ai_state.show_settings;
+                if !self.ai_state.show_settings {
+                    self.ai_state.endpoint = self.ai_state.temp_endpoint.clone();
+                    self.ai_state.model = self.ai_state.temp_model.clone();
+                    self.config.ai_endpoint = self.ai_state.endpoint.clone();
+                    self.config.ai_model = self.ai_state.model.clone();
+                    let _ = self.config.save();
+                    self.notify("AI settings saved");
+                }
+                Task::none()
+            }
+
             Message::ToggleThemeModal => {
                 self.show_theme_modal = !self.show_theme_modal;
                 Task::none()
@@ -570,7 +698,7 @@ impl Krebs {
             }
 
             Message::TourNext => {
-                if self.tour_step < 3 {
+                if self.tour_step < 4 {
                     self.tour_step += 1;
                 } else {
                     self.show_tour_modal = false;
@@ -1049,6 +1177,13 @@ impl Krebs {
                 Task::none()
             }
 
+            SidebarAction::ToggleAiCoach => {
+                self.config.show_right_drawer = !self.config.show_right_drawer;
+                self.right_drawer_tab = RightDrawerTab::AiCoach;
+                let _ = self.config.save();
+                Task::none()
+            }
+
             SidebarAction::ToggleRightDrawer => {
                 self.config.show_right_drawer = !self.config.show_right_drawer;
                 let _ = self.config.save();
@@ -1185,6 +1320,12 @@ impl Krebs {
                 Key::Character(ref s) if s.eq_ignore_ascii_case("p") => {
                     return self.handle_sidebar_action(SidebarAction::ExportHtml);
                 }
+                Key::Character(ref s) if s.eq_ignore_ascii_case("h") => {
+                    return self.update(Message::ToggleTopToolbar);
+                }
+                Key::Character(ref s) if s.eq_ignore_ascii_case("j") => {
+                    return self.update(Message::ToggleAiDrawer);
+                }
                 Key::Character(ref s) if s.eq_ignore_ascii_case("f") => {
                     return self.update(Message::ToggleSearch);
                 }
@@ -1273,6 +1414,10 @@ impl Krebs {
             insert_zwnj_at_cursor(&mut self.content);
             self.notify("Inserted ZWNJ (نیم‌فاصله)");
             return Task::none();
+        }
+
+        if matches!(key, Key::Named(keyboard::key::Named::F9)) {
+            return self.update(Message::ToggleTopToolbar);
         }
 
         if matches!(key, Key::Named(keyboard::key::Named::F11)) {
@@ -1416,6 +1561,7 @@ impl Krebs {
                     self.is_german_bar_open,
                     self.app_mode == AppMode::Whiteboard,
                     self.search.is_open,
+                    self.config.show_right_drawer && self.right_drawer_tab == RightDrawerTab::AiCoach,
                 )
                 .map(Message::Sidebar),
             )
@@ -1423,20 +1569,9 @@ impl Krebs {
             None
         };
 
-        // Right Exam & Redemittel Drawer
+        // Right Exam & Hermes AI Assistant Drawer
         let maybe_right_drawer = if self.config.show_right_drawer && self.app_mode == AppMode::Writing {
-            Some(
-                view_right_drawer(
-                    self.timer_remaining_secs,
-                    self.timer_is_running,
-                    self.timer_total_secs,
-                    self.config.target_min_words,
-                    self.config.target_max_words,
-                    &self.stats,
-                    &self.snippets,
-                )
-                .map(Message::Sidebar),
-            )
+            Some(self.view_right_drawer())
         } else {
             None
         };
@@ -1644,7 +1779,10 @@ impl Krebs {
         // Bottom Status Bar
         let bottom_status_bar = self.view_bottom_status_bar();
 
-        let mut studio_col = column![top_header];
+        let mut studio_col = column![];
+        if self.show_top_toolbar {
+            studio_col = studio_col.push(top_header);
+        }
         if let Some(search_widget) = maybe_search {
             studio_col = studio_col.push(search_widget);
         }
@@ -1674,9 +1812,12 @@ impl Krebs {
         .width(Length::Fill)
         .height(Length::Fill);
 
-        let content_col = column![toolbar, canvas_widget]
-            .width(Length::Fill)
-            .height(Length::Fill);
+        let mut content_col = column![];
+        if self.show_top_toolbar {
+            content_col = content_col.push(toolbar);
+        }
+        content_col = content_col.push(canvas_widget);
+        let content_col = content_col.width(Length::Fill).height(Length::Fill);
 
         container(content_col)
             .width(Length::Fill)
@@ -1685,187 +1826,516 @@ impl Krebs {
             .into()
     }
 
+    fn view_right_drawer<'a>(&'a self) -> Element<'a, Message> {
+        let accent = self.accent_choice.color();
+
+        let is_ai = self.right_drawer_tab == RightDrawerTab::AiCoach;
+        let ai_tab_style = if is_ai { tab_active_button_style } else { tab_inactive_button_style };
+        let btn_ai_tab = button(
+            row![
+                render_svg_icon(SVG_AI, 14, if is_ai { accent } else { TEXT_MUTED }),
+                text("Hermes AI").size(12),
+            ]
+            .spacing(5)
+            .align_y(Alignment::Center),
+        )
+        .on_press(Message::SetRightDrawerTab(RightDrawerTab::AiCoach))
+        .style(ai_tab_style)
+        .padding(iced::Padding { top: 4.0, bottom: 4.0, left: 10.0, right: 10.0 });
+
+        let is_de = self.right_drawer_tab == RightDrawerTab::Redemittel;
+        let de_tab_style = if is_de { tab_active_button_style } else { tab_inactive_button_style };
+        let btn_de_tab = button(
+            row![
+                render_svg_icon(SVG_TIMER, 14, if is_de { accent } else { TEXT_MUTED }),
+                text("Exam & Goals").size(12),
+            ]
+            .spacing(5)
+            .align_y(Alignment::Center),
+        )
+        .on_press(Message::SetRightDrawerTab(RightDrawerTab::Redemittel))
+        .style(de_tab_style)
+        .padding(iced::Padding { top: 4.0, bottom: 4.0, left: 10.0, right: 10.0 });
+
+        let btn_close = button(center(render_svg_icon(SVG_CLOSE, 12, TEXT_MUTED)))
+            .on_press(Message::Sidebar(SidebarAction::ToggleRightDrawer))
+            .style(rail_button_style)
+            .width(26)
+            .height(26);
+
+        let drawer_header = row![
+            btn_ai_tab,
+            btn_de_tab,
+            Space::with_width(Length::Fill),
+            btn_close,
+        ]
+        .spacing(4)
+        .align_y(Alignment::Center);
+
+        let drawer_body: Element<'a, Message> = match self.right_drawer_tab {
+            RightDrawerTab::AiCoach => self.view_ai_drawer_content(accent),
+            RightDrawerTab::Redemittel => self.view_redemittel_drawer_content(),
+        };
+
+        let drawer_col = column![
+            drawer_header,
+            container(Space::with_height(1))
+                .style(|_t| container::Style {
+                    background: Some(iced::Background::Color(BORDER_COLOR)),
+                    ..Default::default()
+                })
+                .width(Length::Fill)
+                .height(1),
+            drawer_body,
+        ]
+        .spacing(8)
+        .padding(10);
+
+        container(drawer_col)
+            .width(320)
+            .height(Length::Fill)
+            .style(drawer_container_style)
+            .into()
+    }
+
+    fn view_ai_drawer_content<'a>(&'a self, accent: Color) -> Element<'a, Message> {
+        let action_btn = |action: AiAction, label: &'static str, svg_icon: &'static [u8]| {
+            let is_active = self.ai_state.last_action == Some(action) && !self.ai_state.is_loading;
+            button(
+                row![
+                    render_svg_icon(svg_icon, 13, if is_active { accent } else { TEXT_MUTED }),
+                    text(label).size(11).color(if is_active { accent } else { TEXT_PRIMARY }),
+                ]
+                .spacing(5)
+                .align_y(Alignment::Center),
+            )
+            .on_press(Message::RunAiAction(action))
+            .style(if is_active { tab_active_button_style } else { rail_button_style })
+            .padding(iced::Padding { top: 6.0, bottom: 6.0, left: 10.0, right: 10.0 })
+            .width(Length::Fill)
+        };
+
+        let row1 = row![
+            action_btn(AiAction::GradeEssay, "Grade Essay", SVG_CHECK),
+            action_btn(AiAction::TipsAndFeedback, "Writing Tips", SVG_AI),
+        ]
+        .spacing(6);
+
+        let row2 = row![
+            action_btn(AiAction::FixGrammar, "Fix Grammar", SVG_WRITE),
+            action_btn(AiAction::GermanB2C1, "German B2/C1", SVG_LIST),
+        ]
+        .spacing(6);
+
+        let actions_section = column![row1, row2].spacing(6);
+
+        let result_section: Element<'a, Message> = if self.ai_state.is_loading {
+            container(
+                column![
+                    text("✨ Hermes is evaluating your text...").size(12).color(accent),
+                    text("Analyzing structure, CEFR rubric, and argumentation...").size(10).color(TEXT_MUTED),
+                ]
+                .spacing(6)
+            )
+            .padding(14)
+            .width(Length::Fill)
+            .style(card_container_style)
+            .into()
+        } else if !self.ai_state.response_text.is_empty() {
+            let offline_note: Option<Element<'a, Message>> = if self.ai_state.is_offline_fallback {
+                Some(
+                    container(
+                        text("⚡ Offline Evaluator • Run 'ollama run hermes3' for deep LLM")
+                            .size(10)
+                            .color(ACCENT_AMBER)
+                    )
+                    .padding(5)
+                    .width(Length::Fill)
+                    .style(card_container_style)
+                    .into()
+                )
+            } else {
+                None
+            };
+
+            let scroll_box = scrollable(
+                container(text(&self.ai_state.response_text).size(11.5).color(TEXT_PRIMARY))
+                    .padding(8)
+                    .width(Length::Fill)
+            )
+            .height(Length::Fill);
+
+            let btn_copy = button(
+                row![
+                    render_svg_icon(SVG_CHECK, 11, TEXT_MUTED),
+                    text("Copy Feedback").size(10.5),
+                ]
+                .spacing(4)
+                .align_y(Alignment::Center),
+            )
+            .on_press(Message::AiCopyFeedback)
+            .style(rail_button_style)
+            .padding(iced::Padding { top: 4.0, bottom: 4.0, left: 8.0, right: 8.0 });
+
+            let btn_insert = button(
+                row![
+                    render_svg_icon(SVG_WRITE, 11, TEXT_MUTED),
+                    text("Insert at Cursor").size(10.5),
+                ]
+                .spacing(4)
+                .align_y(Alignment::Center),
+            )
+            .on_press(Message::AiInsertFeedback)
+            .style(rail_button_style)
+            .padding(iced::Padding { top: 4.0, bottom: 4.0, left: 8.0, right: 8.0 });
+
+            let action_bar = row![btn_copy, btn_insert].spacing(6);
+
+            let mut out_col = column![];
+            if let Some(note) = offline_note {
+                out_col = out_col.push(note);
+            }
+            out_col = out_col.push(container(scroll_box).height(Length::Fill).style(card_container_style));
+            out_col = out_col.push(action_bar);
+
+            out_col.spacing(6).height(Length::Fill).into()
+        } else {
+            container(
+                column![
+                    text("✨ Hermes AI Writing Studio").size(13).color(accent),
+                    text("Grade essays against CEFR rubrics, diagnose grammatical cadence, and receive Goethe/Telc B2/C1 suggestions.").size(11).color(Color::from_rgb(0.80, 0.84, 0.90)),
+                    container(
+                        text("🔒 100% Private & Local\nRuns directly on your hardware via local Hermes/Ollama or the built-in offline engine.").size(10).color(ACCENT_AMBER)
+                    )
+                    .padding(6)
+                    .width(Length::Fill)
+                    .style(card_container_style),
+                ]
+                .spacing(8)
+            )
+            .padding(12)
+            .width(Length::Fill)
+            .style(card_container_style)
+            .into()
+        };
+
+        let settings_section: Element<'a, Message> = if self.ai_state.show_settings {
+            column![
+                text("LOCAL AI ENDPOINT").size(9).color(TEXT_MUTED),
+                text_input("http://localhost:11434/v1", &self.ai_state.temp_endpoint)
+                    .on_input(Message::AiSetEndpoint)
+                    .size(11)
+                    .style(text_input_style),
+                text("MODEL NAME").size(9).color(TEXT_MUTED),
+                text_input("hermes3", &self.ai_state.temp_model)
+                    .on_input(Message::AiSetModel)
+                    .size(11)
+                    .style(text_input_style),
+                button(text("Save Settings").size(10))
+                    .on_press(Message::AiToggleSettings)
+                    .style(tab_active_button_style)
+                    .padding(4),
+            ]
+            .spacing(4)
+            .into()
+        } else {
+            row![
+                text(format!("Endpoint: {} • {}", self.ai_state.model, if self.ai_state.is_offline_fallback { "Offline" } else { "Local" })).size(9.5).color(TEXT_MUTED),
+                Space::with_width(Length::Fill),
+                button(text("⚙️ Config").size(9.5))
+                    .on_press(Message::AiToggleSettings)
+                    .style(rail_button_style)
+                    .padding(2),
+            ]
+            .align_y(Alignment::Center)
+            .into()
+        };
+
+        column![
+            actions_section,
+            result_section,
+            settings_section,
+        ]
+        .spacing(8)
+        .height(Length::Fill)
+        .into()
+    }
+
+    fn view_redemittel_drawer_content<'a>(&'a self) -> Element<'a, Message> {
+        let is_in_range = self.stats.word_count >= self.config.target_min_words && self.stats.word_count <= self.config.target_max_words;
+        let badge_color = if self.stats.word_count == 0 {
+            TEXT_MUTED
+        } else if is_in_range {
+            ACCENT_GREEN
+        } else {
+            ACCENT_AMBER
+        };
+
+        let target_row = row![
+            text(format!("Target: {} - {} words", self.config.target_min_words, self.config.target_max_words))
+                .size(11)
+                .color(TEXT_MUTED),
+            Space::with_width(Length::Fill),
+            text(format!("{} words", self.stats.word_count))
+                .size(12)
+                .color(badge_color),
+        ]
+        .align_y(Alignment::Center);
+
+        let target_card = container(target_row)
+            .padding(8)
+            .width(Length::Fill)
+            .style(card_container_style);
+
+        let mut snippets_col = column![
+            text("B2/C1 CONNECTORS (CLICK TO INSERT)")
+                .size(9.5)
+                .color(TEXT_MUTED),
+        ]
+        .spacing(6);
+
+        for cat in &self.snippets.categories {
+            let mut cat_col = column![
+                text(&cat.name).size(10.5).color(ACCENT_AMBER),
+            ]
+            .spacing(3);
+
+            for item in &cat.items {
+                let snippet_text = item.text.clone();
+                let chip = button(
+                    text(&item.label)
+                        .size(11)
+                        .color(TEXT_PRIMARY),
+                )
+                .on_press(Message::Sidebar(SidebarAction::InsertSnippet(snippet_text)))
+                .style(rail_button_style)
+                .padding(iced::Padding { top: 4.0, bottom: 4.0, left: 8.0, right: 8.0 })
+                .width(Length::Fill);
+
+                cat_col = cat_col.push(chip);
+            }
+
+            snippets_col = snippets_col.push(cat_col);
+        }
+
+        let scrollable_snippets = scrollable(snippets_col).height(Length::Fill);
+
+        column![
+            target_card,
+            container(Space::with_height(1))
+                .style(|_t| container::Style {
+                    background: Some(iced::Background::Color(BORDER_COLOR)),
+                    ..Default::default()
+                })
+                .width(Length::Fill)
+                .height(1),
+            scrollable_snippets,
+        ]
+        .spacing(8)
+        .height(Length::Fill)
+        .into()
+    }
+
     fn view_top_header<'a>(&'a self) -> Element<'a, Message> {
         let accent = self.accent_choice.color();
 
-        // Mode Switcher Chips: Writing Studio vs Whiteboard
-        let write_tab_style = if self.app_mode == AppMode::Writing {
-            tab_active_button_style
-        } else {
-            tab_inactive_button_style
-        };
-        let write_icon_color = if self.app_mode == AppMode::Writing { accent } else { TEXT_MUTED };
+        // 1. Mode Switcher Chips (Writing Studio vs Whiteboard) - Bigger buttons
+        let is_writing = self.app_mode == AppMode::Writing;
+        let write_tab_style = if is_writing { tab_active_button_style } else { tab_inactive_button_style };
         let btn_write = button(
             row![
-                render_svg_icon(SVG_WRITE, 13, write_icon_color),
-                text("Write").size(11),
+                render_svg_icon(SVG_WRITE, 15, if is_writing { accent } else { TEXT_MUTED }),
+                text("Write").size(12.5),
             ]
-            .spacing(5)
+            .spacing(6)
             .align_y(Alignment::Center),
         )
         .on_press(Message::SetAppMode(AppMode::Writing))
         .style(write_tab_style)
-        .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 10.0, right: 10.0 });
+        .padding(iced::Padding { top: 4.0, bottom: 4.0, left: 11.0, right: 11.0 });
 
-        let board_tab_style = if self.app_mode == AppMode::Whiteboard {
-            tab_active_button_style
-        } else {
-            tab_inactive_button_style
-        };
-        let board_icon_color = if self.app_mode == AppMode::Whiteboard { accent } else { TEXT_MUTED };
+        let is_whiteboard = self.app_mode == AppMode::Whiteboard;
+        let board_tab_style = if is_whiteboard { tab_active_button_style } else { tab_inactive_button_style };
         let btn_board = button(
             row![
-                render_svg_icon(SVG_WHITEBOARD, 13, board_icon_color),
-                text("Whiteboard").size(11),
+                render_svg_icon(SVG_WHITEBOARD, 15, if is_whiteboard { accent } else { TEXT_MUTED }),
+                text("Whiteboard").size(12.5),
             ]
-            .spacing(5)
+            .spacing(6)
             .align_y(Alignment::Center),
         )
         .on_press(Message::SetAppMode(AppMode::Whiteboard))
         .style(board_tab_style)
-        .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 10.0, right: 10.0 });
+        .padding(iced::Padding { top: 4.0, bottom: 4.0, left: 11.0, right: 11.0 });
 
-        // View Mode Segment: Edit | Split | Preview
-        let edit_color = if self.view_mode == ViewMode::Edit { accent } else { TEXT_MUTED };
+        // 2. View Mode Segment: Edit | Split | Preview
         let btn_mode_edit = button(
             row![
-                render_svg_icon(SVG_WRITE, 12, edit_color),
-                text("Edit").size(11),
+                render_svg_icon(SVG_WRITE, 13, if self.view_mode == ViewMode::Edit { accent } else { TEXT_MUTED }),
+                text("Edit").size(12),
             ]
-            .spacing(4)
+            .spacing(5)
             .align_y(Alignment::Center),
         )
         .on_press(Message::SetViewMode(ViewMode::Edit))
         .style(if self.view_mode == ViewMode::Edit { tab_active_button_style } else { tab_inactive_button_style })
-        .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 8.0, right: 8.0 });
+        .padding(iced::Padding { top: 4.0, bottom: 4.0, left: 9.0, right: 9.0 });
 
-        let split_color = if self.view_mode == ViewMode::Split { accent } else { TEXT_MUTED };
         let btn_mode_split = button(
             row![
-                render_svg_icon(SVG_SPLIT, 12, split_color),
-                text("Live Split").size(11),
+                render_svg_icon(SVG_SPLIT, 13, if self.view_mode == ViewMode::Split { accent } else { TEXT_MUTED }),
+                text("Live Split").size(12),
             ]
-            .spacing(4)
+            .spacing(5)
             .align_y(Alignment::Center),
         )
         .on_press(Message::SetViewMode(ViewMode::Split))
         .style(if self.view_mode == ViewMode::Split { tab_active_button_style } else { tab_inactive_button_style })
-        .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 8.0, right: 8.0 });
+        .padding(iced::Padding { top: 4.0, bottom: 4.0, left: 9.0, right: 9.0 });
 
-        let prev_color = if self.view_mode == ViewMode::Preview { accent } else { TEXT_MUTED };
         let btn_mode_preview = button(
             row![
-                render_svg_icon(SVG_PREVIEW, 12, prev_color),
-                text("Preview").size(11),
+                render_svg_icon(SVG_PREVIEW, 13, if self.view_mode == ViewMode::Preview { accent } else { TEXT_MUTED }),
+                text("Preview").size(12),
             ]
-            .spacing(4)
+            .spacing(5)
             .align_y(Alignment::Center),
         )
         .on_press(Message::SetViewMode(ViewMode::Preview))
         .style(if self.view_mode == ViewMode::Preview { tab_active_button_style } else { tab_inactive_button_style })
-        .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 8.0, right: 8.0 });
+        .padding(iced::Padding { top: 4.0, bottom: 4.0, left: 9.0, right: 9.0 });
 
-        // Width Cycle Button
+        let left_cluster = row![
+            btn_write,
+            btn_board,
+            Space::with_width(8),
+            btn_mode_edit,
+            btn_mode_split,
+            btn_mode_preview,
+        ]
+        .spacing(4)
+        .align_y(Alignment::Center);
+
+        // 3. Central Draggable Title Area with Blue Crab Logo
+        let drag_center = mouse_area(
+            container(
+                row![
+                    render_svg_icon(SVG_TOUR, 14, accent),
+                    text("Krebs Studio").size(12).color(Color::from_rgba(1.0, 1.0, 1.0, 0.45)),
+                ]
+                .spacing(6)
+                .align_y(Alignment::Center)
+            )
+            .center_x(Length::Fill)
+            .width(Length::Fill)
+        )
+        .on_press(Message::WindowDrag);
+
+        // 4. Right Utilities & Tools (Hermes AI, Width, Font, Clock, Zen Hide, Window controls)
+        let is_ai_open = self.config.show_right_drawer && self.right_drawer_tab == RightDrawerTab::AiCoach;
+        let btn_ai = button(
+            row![
+                render_svg_icon(SVG_AI, 14, if is_ai_open { accent } else { ACCENT_CYAN }),
+                text("Hermes AI").size(12).color(if is_ai_open { accent } else { TEXT_PRIMARY }),
+            ]
+            .spacing(5)
+            .align_y(Alignment::Center),
+        )
+        .on_press(Message::ToggleAiDrawer)
+        .style(if is_ai_open { tab_active_button_style } else { rail_button_style })
+        .padding(iced::Padding { top: 4.0, bottom: 4.0, left: 9.0, right: 9.0 });
+
         let btn_width = button(
             row![
-                render_svg_icon(SVG_WIDTH, 12, TEXT_MUTED),
-                text(self.canvas_width_mode.label()).size(11),
+                render_svg_icon(SVG_WIDTH, 13, TEXT_MUTED),
+                text(self.canvas_width_mode.label()).size(12),
             ]
-            .spacing(4)
+            .spacing(5)
             .align_y(Alignment::Center),
         )
         .on_press(Message::CycleWidthMode)
         .style(rail_button_style)
-        .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 8.0, right: 8.0 });
+        .padding(iced::Padding { top: 4.0, bottom: 4.0, left: 9.0, right: 9.0 });
 
-        // Font Switcher Button
         let btn_font = button(
             row![
-                render_svg_icon(SVG_FONT, 12, TEXT_MUTED),
-                text(self.font_choice.display_name()).size(11),
+                render_svg_icon(SVG_FONT, 13, TEXT_MUTED),
+                text(self.font_choice.display_name()).size(12),
             ]
-            .spacing(4)
+            .spacing(5)
             .align_y(Alignment::Center),
         )
         .on_press(Message::ToggleFontModal)
         .style(rail_button_style)
-        .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 8.0, right: 8.0 });
+        .padding(iced::Padding { top: 4.0, bottom: 4.0, left: 9.0, right: 9.0 });
 
-        // Minimal Zen Clock
         let mins = self.timer_remaining_secs / 60;
         let secs = self.timer_remaining_secs % 60;
         let clock_str = format!("{:02}:{:02}", mins, secs);
-        let clock_color = if self.timer_is_running {
-            accent
-        } else {
-            TEXT_MUTED
-        };
+        let clock_color = if self.timer_is_running { accent } else { TEXT_MUTED };
 
         let btn_clock = button(
             row![
-                render_svg_icon(SVG_TIMER, 12, clock_color),
-                text(clock_str).size(11).color(clock_color),
+                render_svg_icon(SVG_TIMER, 13, clock_color),
+                text(clock_str).size(12).color(clock_color),
             ]
-            .spacing(4)
+            .spacing(5)
             .align_y(Alignment::Center),
         )
         .on_press(Message::ZenTimerToggle)
         .style(rail_button_style)
-        .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 8.0, right: 8.0 });
+        .padding(iced::Padding { top: 4.0, bottom: 4.0, left: 9.0, right: 9.0 });
 
         let btn_clock_presets = button(
             center(render_svg_icon(SVG_CHEVRON_DOWN, 10, TEXT_MUTED))
         )
         .on_press(Message::ZenTimerTogglePresets)
         .style(rail_button_style)
-        .padding(iced::Padding { top: 3.0, bottom: 3.0, left: 4.0, right: 4.0 });
+        .padding(iced::Padding { top: 4.0, bottom: 4.0, left: 5.0, right: 5.0 });
 
-        let btn_theme = button(center(render_svg_icon(SVG_THEME, 14, TEXT_MUTED)))
+        let btn_theme = button(center(render_svg_icon(SVG_THEME, 15, TEXT_MUTED)))
             .on_press(Message::ToggleThemeModal)
             .style(rail_button_style)
-            .padding(iced::Padding::new(4.0));
+            .padding(iced::Padding::new(5.0));
 
-        let btn_tour = button(center(render_svg_icon(SVG_TOUR, 14, TEXT_MUTED)))
+        let btn_tour = button(center(render_svg_icon(SVG_TOUR, 15, TEXT_MUTED)))
             .on_press(Message::ToggleTourModal)
             .style(rail_button_style)
-            .padding(iced::Padding::new(4.0));
+            .padding(iced::Padding::new(5.0));
 
-        let btn_min = button(center(render_svg_icon(SVG_MINIMIZE, 12, TEXT_MUTED)))
+        let btn_zen_hide = button(center(render_svg_icon(SVG_EYE, 15, TEXT_MUTED)))
+            .on_press(Message::ToggleTopToolbar)
+            .style(rail_button_style)
+            .padding(iced::Padding::new(5.0));
+
+        let btn_min = button(center(render_svg_icon(SVG_MINIMIZE, 13, TEXT_MUTED)))
             .on_press(Message::WindowMinimize)
             .style(rail_button_style)
-            .width(28)
-            .height(24);
+            .width(30)
+            .height(26);
 
-        let btn_max = button(center(render_svg_icon(SVG_FULLSCREEN, 12, TEXT_MUTED)))
+        let btn_max = button(center(render_svg_icon(SVG_FULLSCREEN, 13, TEXT_MUTED)))
             .on_press(Message::WindowToggleMaximize)
             .style(rail_button_style)
-            .width(28)
-            .height(24);
+            .width(30)
+            .height(26);
 
-        let btn_close = button(center(render_svg_icon(SVG_CLOSE, 12, TEXT_MUTED)))
+        let btn_close = button(center(render_svg_icon(SVG_CLOSE, 13, TEXT_MUTED)))
             .on_press(Message::WindowClose)
             .style(rail_button_style)
-            .width(28)
-            .height(24);
+            .width(30)
+            .height(26);
 
-        let drag_spacer = mouse_area(Space::with_width(Length::Fill)).on_press(Message::WindowDrag);
-
-        let mut header_row = row![
-            btn_write,
-            btn_board,
-            Space::with_width(12),
-            btn_mode_edit,
-            btn_mode_split,
-            btn_mode_preview,
-            drag_spacer,
+        let mut right_cluster = row![
+            btn_ai,
             btn_width,
             btn_font,
             btn_clock,
             btn_clock_presets,
-            Space::with_width(8),
             btn_theme,
             btn_tour,
-            Space::with_width(8),
+            btn_zen_hide,
+            Space::with_width(6),
             btn_min,
             btn_max,
             btn_close,
@@ -1880,16 +2350,24 @@ impl Krebs {
             let p60 = button(text("60m").size(10)).on_press(Message::ZenTimerSet(3600)).style(rail_button_style).padding(iced::Padding::new(3.0));
             let rst = button(center(render_svg_icon(SVG_RESET, 11, TEXT_MUTED))).on_press(Message::Sidebar(SidebarAction::TimerReset)).style(rail_button_style).padding(iced::Padding::new(3.0));
 
-            header_row = header_row.push(row![p15, p25, p45, p60, rst].spacing(2).align_y(Alignment::Center));
+            right_cluster = right_cluster.push(row![p15, p25, p45, p60, rst].spacing(2).align_y(Alignment::Center));
         }
+
+        let header_row = row![
+            left_cluster,
+            drag_center,
+            right_cluster,
+        ]
+        .width(Length::Fill)
+        .align_y(Alignment::Center);
 
         container(header_row)
             .width(Length::Fill)
             .padding(iced::Padding {
-                top: 6.0,
-                bottom: 6.0,
-                left: 14.0,
-                right: 14.0,
+                top: 3.5,
+                bottom: 3.5,
+                left: 10.0,
+                right: 10.0,
             })
             .style(|_t| container::Style {
                 background: Some(iced::Background::Color(RAIL_BG)),
@@ -2323,18 +2801,23 @@ impl Krebs {
                 "Shortcuts: Ctrl+1/2/3 for Views  •  Ctrl+W for Width  •  Ctrl+B/I for formatting",
             ),
             2 => (
-                "3. Infinite Whiteboard Studio",
+                "3. Infinite Whiteboard Studio (Tablet & Pen)",
                 "Switch into Whiteboard Studio (Ctrl+M) anytime for freehand notes, sketching, and diagramming. Designed for tablet and pen stylus users with low latency, multiple paper templates (Math Grid, Ruled, Dot, Blank), and one-click Wipe Board.",
                 "Shortcuts: Ctrl+M to toggle Whiteboard  •  1-click Wipe to delete scratch work",
             ),
+            3 => (
+                "4. Hermes AI Essay Coach & Writing Agent",
+                "Grade your essays against CEFR rubrics, receive actionable writing tips, check grammar and flow, and polish German B2/C1 connectors. Runs 100% privately on your machine using local Hermes LLM (via Ollama or OpenAI-compatible endpoint) with a built-in offline evaluator.",
+                "Hermes Agent • 100% Private Local AI • CEFR Essay Grading",
+            ),
             _ => (
-                "4. Exam Essay Training & Portable Storage",
-                "Boost your writing speed with the Zen Countdown Timer and Word Count Target Tracker (green when in target range, amber when outside). Access German B2/C1 exam Redemittel connectors anytime from the right drawer (Ctrl+E). Everything is stored locally in ./krebs_data/.",
-                "Shortcuts: Ctrl+E for Exam Drawer  •  Ctrl+S to Save  •  Ctrl+P to Print/Export",
+                "5. Zen Mode, Exam Trainer & Full Portability",
+                "Press Ctrl+H to toggle the top toolbar for complete immersion. Track exam countdowns and word goals. All drafts, settings, and recovery buffers stay right alongside your binary in ./krebs_data/.",
+                "Shortcuts: Ctrl+H to Hide/Show Toolbar  •  Ctrl+E for AI/Exam Drawer  •  F1 for Shortcuts",
             ),
         };
 
-        let step_counter = text(format!("Step {} of 4", self.tour_step + 1))
+        let step_counter = text(format!("Step {} of 5", self.tour_step + 1))
             .size(11)
             .color(TEXT_MUTED);
 
@@ -2355,8 +2838,8 @@ impl Krebs {
             btn_prev = btn_prev.on_press(Message::TourPrev);
         }
 
-        let next_label = if self.tour_step < 3 { "Next →" } else { "Get Started 🚀" };
-        let next_msg = if self.tour_step < 3 { Message::TourNext } else { Message::TourFinish };
+        let next_label = if self.tour_step < 4 { "Next →" } else { "Get Started 🚀" };
+        let next_msg = if self.tour_step < 4 { Message::TourNext } else { Message::TourFinish };
         let btn_next = button(text(next_label).size(11))
             .on_press(next_msg)
             .style(tab_active_button_style)
@@ -2712,5 +3195,28 @@ mod tests {
         let _ = app.update(Message::TourFinish);
         assert!(!app.show_tour_modal);
         assert!(app.config.has_seen_tour);
+
+        // 12. Test Zen Mode toolbar hide/unhide toggle
+        assert!(app.show_top_toolbar);
+        let _ = app.update(Message::ToggleTopToolbar);
+        assert!(!app.show_top_toolbar);
+        let _ = app.update(Message::ToggleTopToolbar);
+        assert!(app.show_top_toolbar);
+
+        // 13. Test Hermes AI Drawer toggle and actions
+        let _ = app.update(Message::ToggleAiDrawer);
+        assert!(app.config.show_right_drawer);
+        assert_eq!(app.right_drawer_tab, RightDrawerTab::AiCoach);
+        let _ = app.update(Message::SetRightDrawerTab(RightDrawerTab::Redemittel));
+        assert_eq!(app.right_drawer_tab, RightDrawerTab::Redemittel);
+
+        // 14. Test Offline Essay Evaluator
+        let sample_essay = "In der heutigen Zeit ist Bildung von zentraler Bedeutung. Einerseits bietet sie Chancen. Andererseits erfordert sie Fleiss. Zusammenfassend laesst sich sagen, dass Lernen lebenslang ist.";
+        let grade_report = ai::evaluate_essay_offline(sample_essay, ai::AiAction::GradeEssay);
+        assert!(grade_report.contains("Academic Essay Scorecard"));
+        assert!(grade_report.contains("Quantitative Metrics"));
+
+        let tips_report = ai::evaluate_essay_offline(sample_essay, ai::AiAction::TipsAndFeedback);
+        assert!(tips_report.contains("Hermes Writing Tips"));
     }
 }

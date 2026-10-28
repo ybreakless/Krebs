@@ -43,6 +43,7 @@ pub enum SidebarAction {
     TimerSetDuration(u64),
     TargetMinChanged(usize),
     TargetMaxChanged(usize),
+    ToggleAiCoach,
 }
 
 fn create_divider<'a>() -> Element<'a, SidebarAction> {
@@ -51,7 +52,7 @@ fn create_divider<'a>() -> Element<'a, SidebarAction> {
             background: Some(iced::Background::Color(BORDER_COLOR)),
             ..Default::default()
         })
-        .width(22)
+        .width(28)
         .height(1)
         .into()
 }
@@ -73,8 +74,8 @@ fn sidebar_icon_button<'a>(
     button(center(render_svg_icon(svg_bytes, icon_size, icon_color)))
         .on_press(action)
         .style(btn_style)
-        .width(32)
-        .height(32)
+        .width(36)
+        .height(36)
 }
 
 /// Helper to build uniform 32x32 flex-centered sidebar tool button with text
@@ -99,8 +100,8 @@ fn sidebar_text_button<'a>(
     )
     .on_press(action)
     .style(btn_style)
-    .width(32)
-    .height(32)
+    .width(36)
+    .height(36)
 }
 
 /// Renders the left ultra-minimal vertical icon rail (42px wide).
@@ -111,6 +112,7 @@ pub fn view_left_rail<'a>(
     is_german_bar_open: bool,
     is_whiteboard_active: bool,
     is_search_open: bool,
+    is_ai_drawer_open: bool,
 ) -> Element<'a, SidebarAction> {
     // 1. Mode switcher at very top: Write Studio vs Whiteboard Studio
     let (mode_svg, mode_color) = if is_whiteboard_active {
@@ -155,6 +157,13 @@ pub fn view_left_rail<'a>(
     // 5. Trilingual & Exam Tools
     let btn_direction = sidebar_icon_button(SVG_BIDI, 15, TEXT_MUTED, SidebarAction::CycleDirection, false);
     let btn_german = sidebar_text_button("äö", 11, SidebarAction::ToggleGermanBar, is_german_bar_open);
+    let btn_ai = sidebar_icon_button(
+        SVG_AI,
+        16,
+        if is_ai_drawer_open { ACCENT_CYAN } else { TEXT_MUTED },
+        SidebarAction::ToggleAiCoach,
+        is_ai_drawer_open,
+    );
     let btn_exam = sidebar_icon_button(
         SVG_TIMER,
         16,
@@ -194,6 +203,7 @@ pub fn view_left_rail<'a>(
         btn_direction,
         btn_german,
         btn_exam,
+        btn_ai,
     ]
     .spacing(4)
     .align_x(Alignment::Center)
@@ -223,7 +233,7 @@ pub fn view_left_rail<'a>(
     rail_col = rail_col.push(btn_help);
 
     container(rail_col)
-        .width(42)
+        .width(48)
         .height(Length::Fill)
         .style(rail_container_style)
         .into()
