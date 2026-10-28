@@ -60,8 +60,8 @@ impl ThemeMode {
     pub fn canvas_bg(&self) -> Color {
         match self {
             Self::OmarchyDark => Color::from_rgb(0.067, 0.071, 0.086), // #111216
-            Self::OledBlack => Color::from_rgb(0.0, 0.0, 0.0), // #000000
-            Self::DeepSlate => Color::from_rgb(0.086, 0.094, 0.122), // #16181f
+            Self::OledBlack => Color::from_rgb(0.0, 0.0, 0.0),         // #000000
+            Self::DeepSlate => Color::from_rgb(0.086, 0.094, 0.122),   // #16181f
             Self::WarmEspresso => Color::from_rgb(0.090, 0.078, 0.070), // #171412
         }
     }
@@ -69,8 +69,8 @@ impl ThemeMode {
     pub fn rail_bg(&self) -> Color {
         match self {
             Self::OmarchyDark => Color::from_rgb(0.043, 0.047, 0.055), // #0b0c0e
-            Self::OledBlack => Color::from_rgb(0.035, 0.035, 0.035), // #090909
-            Self::DeepSlate => Color::from_rgb(0.059, 0.063, 0.082), // #0f1015
+            Self::OledBlack => Color::from_rgb(0.035, 0.035, 0.035),   // #090909
+            Self::DeepSlate => Color::from_rgb(0.059, 0.063, 0.082),   // #0f1015
             Self::WarmEspresso => Color::from_rgb(0.063, 0.051, 0.043), // #100d0b
         }
     }
@@ -474,7 +474,11 @@ pub fn tab_inactive_button_style(_theme: &iced::Theme, status: button::Status) -
         button::Status::Active => base,
         button::Status::Hovered => button::Style {
             background: Some(Background::Color(SURFACE_HOVER)),
-            border: Border { color: BORDER_COLOR, width: 1.0, ..base.border },
+            border: Border {
+                color: BORDER_COLOR,
+                width: 1.0,
+                ..base.border
+            },
             text_color: TEXT_HOVER,
             ..base
         },

@@ -1,5 +1,5 @@
-use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AiProvider {
@@ -297,8 +297,7 @@ fn call_ai_endpoint(
         .read_to_string()
         .map_err(|e| e.to_string())?;
 
-    let parsed: serde_json::Value =
-        serde_json::from_str(&resp_str).map_err(|e| e.to_string())?;
+    let parsed: serde_json::Value = serde_json::from_str(&resp_str).map_err(|e| e.to_string())?;
 
     if let Some(content) = parsed["choices"][0]["message"]["content"].as_str() {
         Ok(content.to_string())
@@ -315,7 +314,10 @@ pub fn evaluate_essay_offline(draft: &str, action: AiAction) -> String {
     let words: Vec<&str> = draft.split_whitespace().collect();
     let word_count = words.len();
     let _char_count = draft.chars().count();
-    let paragraphs: Vec<&str> = draft.split("\n\n").filter(|p| !p.trim().is_empty()).collect();
+    let paragraphs: Vec<&str> = draft
+        .split("\n\n")
+        .filter(|p| !p.trim().is_empty())
+        .collect();
     let p_count = paragraphs.len().max(1);
 
     let sentences: Vec<&str> = draft
@@ -336,9 +338,20 @@ pub fn evaluate_essay_offline(draft: &str, action: AiAction) -> String {
 
     // German Redemittel connector detection
     let german_connectors = [
-        "deshalb", "außerdem", "darüber hinaus", "einerseits", "andererseits",
-        "jedoch", "allerdings", "dennoch", "infolgedessen", "zusammenfassend",
-        "meiner meinung nach", "es steht außer frage", "abschließend", "zwar"
+        "deshalb",
+        "außerdem",
+        "darüber hinaus",
+        "einerseits",
+        "andererseits",
+        "jedoch",
+        "allerdings",
+        "dennoch",
+        "infolgedessen",
+        "zusammenfassend",
+        "meiner meinung nach",
+        "es steht außer frage",
+        "abschließend",
+        "zwar",
     ];
     let lower_text = draft.to_lowercase();
     let mut found_connectors = Vec::new();

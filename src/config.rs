@@ -78,6 +78,10 @@ pub struct AppConfig {
     pub ai_provider: String,
     #[serde(default)]
     pub ai_api_key: String,
+    /// ISO 639-1 UI language code (`en`, `de`, `fa`, `ru`, `zh`, `ja`, `ko`,
+    /// `ar`, `fr`, `es`). See `i18n::Lang`.
+    #[serde(default = "default_language")]
+    pub language: String,
 }
 
 fn default_canvas_width_mode() -> String {
@@ -116,6 +120,9 @@ fn default_drawer_width() -> f32 {
 fn default_ai_provider() -> String {
     "hermes".to_string()
 }
+fn default_language() -> String {
+    "en".to_string()
+}
 
 impl Default for AppConfig {
     fn default() -> Self {
@@ -149,6 +156,7 @@ impl Default for AppConfig {
             drawer_width: 380.0,
             ai_provider: "hermes".to_string(),
             ai_api_key: String::new(),
+            language: "en".to_string(),
         }
     }
 }
@@ -408,10 +416,22 @@ mod tests {
     fn test_snippets_default() {
         let snippets = SnippetsConfig::default();
         assert_eq!(snippets.categories.len(), 4);
-        assert!(snippets.categories.iter().any(|c| c.name.contains("Einleitung")));
-        assert!(snippets.categories.iter().any(|c| c.name.contains("Meinung")));
-        assert!(snippets.categories.iter().any(|c| c.name.contains("Vor- & Nachteile")));
-        assert!(snippets.categories.iter().any(|c| c.name.contains("Schluss")));
+        assert!(snippets
+            .categories
+            .iter()
+            .any(|c| c.name.contains("Einleitung")));
+        assert!(snippets
+            .categories
+            .iter()
+            .any(|c| c.name.contains("Meinung")));
+        assert!(snippets
+            .categories
+            .iter()
+            .any(|c| c.name.contains("Vor- & Nachteile")));
+        assert!(snippets
+            .categories
+            .iter()
+            .any(|c| c.name.contains("Schluss")));
     }
 
     #[test]

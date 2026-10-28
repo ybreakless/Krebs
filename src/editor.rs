@@ -99,7 +99,10 @@ pub struct DocumentStats {
 impl DocumentStats {
     pub fn compute(text: &str) -> Self {
         let char_count = text.chars().count();
-        let char_count_no_spaces = text.chars().filter(|c| !c.is_whitespace() && *c != ZWNJ_CHAR).count();
+        let char_count_no_spaces = text
+            .chars()
+            .filter(|c| !c.is_whitespace() && *c != ZWNJ_CHAR)
+            .count();
         let lines: Vec<&str> = text.lines().collect();
         let line_count = lines.len();
         let paragraph_count = lines.iter().filter(|l| !l.trim().is_empty()).count();
@@ -163,7 +166,8 @@ pub fn apply_smart_typography(text: &str, smart_quotes: bool, smart_dashes: bool
         for i in 0..chars.len() {
             let c = chars[i];
             if c == '"' {
-                let prev_is_space_or_start = i == 0 || chars[i - 1].is_whitespace() || is_custom_punct(chars[i - 1]);
+                let prev_is_space_or_start =
+                    i == 0 || chars[i - 1].is_whitespace() || is_custom_punct(chars[i - 1]);
                 if prev_is_space_or_start || !open_quote {
                     output.push('„'); // German opening lower quote
                     open_quote = true;
@@ -239,10 +243,7 @@ impl EditorHistory {
 }
 
 /// Helper to insert a string at the current cursor in `iced::widget::text_editor::Content`.
-pub fn insert_text_at_cursor(
-    content: &mut text_editor::Content<iced::Renderer>,
-    text: &str,
-) {
+pub fn insert_text_at_cursor(content: &mut text_editor::Content<iced::Renderer>, text: &str) {
     content.perform(Action::Edit(Edit::Paste(Arc::new(text.to_string()))));
 }
 
@@ -337,4 +338,3 @@ mod tests {
         assert_eq!(redone, Some("Third text".to_string()));
     }
 }
-

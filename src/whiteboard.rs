@@ -1,5 +1,5 @@
-use iced::{mouse, touch};
 use iced::widget::canvas::{self, Frame, Geometry, LineCap, LineJoin, Path, Program, Stroke};
+use iced::{mouse, touch};
 use iced::{Color, Point, Rectangle, Renderer, Theme};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -221,7 +221,9 @@ where
                 if rel_x >= 0.0 && rel_x <= bounds.width && rel_y >= 0.0 && rel_y <= bounds.height {
                     (
                         canvas::event::Status::Captured,
-                        Some(Message::from(WhiteboardMessage::PointPressed(Point::new(rel_x, rel_y)))),
+                        Some(Message::from(WhiteboardMessage::PointPressed(Point::new(
+                            rel_x, rel_y,
+                        )))),
                     )
                 } else {
                     (canvas::event::Status::Ignored, None)
@@ -233,7 +235,9 @@ where
                     let rel_y = (position.y - bounds.y).clamp(0.0, bounds.height);
                     (
                         canvas::event::Status::Captured,
-                        Some(Message::from(WhiteboardMessage::PointDragged(Point::new(rel_x, rel_y)))),
+                        Some(Message::from(WhiteboardMessage::PointDragged(Point::new(
+                            rel_x, rel_y,
+                        )))),
                     )
                 } else {
                     (canvas::event::Status::Ignored, None)
@@ -349,9 +353,7 @@ where
                     let line = Path::line(p1, p2);
                     frame.stroke(
                         &line,
-                        Stroke::default()
-                            .with_color(line_color)
-                            .with_width(1.0),
+                        Stroke::default().with_color(line_color).with_width(1.0),
                     );
                     y += line_spacing;
                 }
