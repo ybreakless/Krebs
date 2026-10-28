@@ -21,9 +21,9 @@ Repository: `ybreakless/Krebs` Â· Release target: **v1.0.0** (from `0.1.0`)
 
 ## Phase 2 â€” Aesthetic Minimalist Crab Logo (`feat/crab-logo-svg`)
 
-- [ ] New geometric minimalist SVG: obsidian `#0b0f19` container, Nordic cyan `#38bdf8`/`#0284c7`, faceted carapace, centered stylus nib
-- [ ] Update `tests/generate_logo.rs` with the new artwork
-- [ ] `cargo test --test generate_logo` regenerates `assets/logo.svg`, `assets/logo.png`, `krebs_icon.png`, `krebs_icon.ico`
+[x] New geometric minimalist SVG: obsidian `#0b0f19` container, Nordic cyan `#38bdf8`/`#0284c7`, faceted carapace, centered stylus nib
+[x] Update `tests/generate_logo.rs` with the new artwork
+[x] `cargo test --test generate_logo` regenerates `assets/logo.svg`, `assets/logo.png`, `krebs_icon.png`, `krebs_icon.ico`
 
 ## Phase 3 â€” Button Ergonomics & Visual Clarity (`feat/button-clarity`)
 
@@ -88,4 +88,5 @@ Repository: `ybreakless/Krebs` Â· Release target: **v1.0.0** (from `0.1.0`)
 - [ ] README reflects: 10 languages, Prompt Studio & MCP, font importer, whiteboard templates, export formats
 - [ ] Packaging scripts sanity: `package.ps1`, `build_packages.sh`, `release.yml` consistent with v1.0.0 artifact naming
 - [ ] Bump version to 1.0.0, final merge `chore(release): v1.0.0 production ready release`, clean tree
+
 
