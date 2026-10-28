@@ -1,0 +1,37 @@
+# Maintainer: ybreakless <194576839+ybreakless@users.noreply.github.com>
+pkgname=krebs
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Minimalist Writing & Infinite Whiteboard Studio in Pure Rust"
+arch=('x86_64')
+url="https://github.com/ybreakless/Krebs"
+license=('MIT')
+depends=(
+    'fontconfig'
+    'libx11'
+    'libxcursor'
+    'libxrandr'
+    'libxi'
+    'libxinerama'
+    'libxkbcommon'
+    'mesa'
+    'wayland'
+)
+makedepends=('cargo' 'rust')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+    cd "Krebs-$pkgver"
+    cargo build --release --locked
+}
+
+package() {
+    cd "Krebs-$pkgver"
+    install -Dm755 "target/release/krebs" "$pkgdir/usr/bin/krebs"
+    install -Dm644 "packaging/linux/krebs.desktop" "$pkgdir/usr/share/applications/krebs.desktop"
+    install -Dm644 "assets/logo.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/krebs.svg"
+    install -Dm644 "assets/logo.png" "$pkgdir/usr/share/icons/hicolor/512x512/apps/krebs.png"
+    install -Dm644 "README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
+    install -Dm644 "LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

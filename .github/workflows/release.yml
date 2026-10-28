@@ -1,0 +1,404 @@
+name: Release Build & Multi-Platform Packaging
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version tag (e.g. v0.1.0)'
+        required: false
+        default: 'v0.1.0'
+
+permissions:
+  contents: write
+
+jobs:
+  # -------------------------------------------------------------
+  # 1. Linux Packaging (APT .deb, DNF .rpm, Pacman .pkg.tar.zst)
+  # -------------------------------------------------------------
+  build-linux:
+    name: Linux Packages (APT, DNF, Pacman, Tarball)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libx11-dev \
+            libxcursor-dev \
+            libxrandr-dev \
+            libxi-dev \
+            libxinerama-dev \
+            libgl1-mesa-dev \
+            libxkbcommon-dev \
+            libwayland-dev \
+            libfontconfig1-dev \
+            libasound2-dev \
+            libssl-dev \
+            pkg-config \
+            rpm \
+            zstd
+
+      - name: Install Packaging Tools (cargo-binstall, cargo-deb, cargo-generate-rpm)
+        run: |
+          curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+          cargo binstall --no-confirm cargo-deb cargo-generate-rpm
+
+      - name: Build Release Binary
+        run: cargo build --release --target x86_64-unknown-linux-gnu
+
+      - name: Determine Version
+        id: ver
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          if [ -z "$VERSION" ]; then
+            VERSION="${GITHUB_REF_NAME}"
+          fi
+          VERSION="${VERSION#v}"
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Package for Debian / Ubuntu (APT .deb)
+        run: |
+          cargo deb --target x86_64-unknown-linux-gnu --no-build
+          mkdir -p dist
+          cp target/x86_64-unknown-linux-gnu/debian/*.deb dist/
+
+      - name: Package for Fedora / RHEL (DNF .rpm)
+        run: |
+          cargo generate-rpm --target x86_64-unknown-linux-gnu
+          cp target/generate-rpm/*.rpm dist/
+
+      - name: Package for Arch Linux (Pacman .pkg.tar.zst)
+        run: |
+          VERSION="${{ steps.ver.outputs.VERSION }}"
+          PKG_DIR="pkg-arch"
+          mkdir -p "$PKG_DIR/usr/bin"
+          mkdir -p "$PKG_DIR/usr/share/applications"
+          mkdir -p "$PKG_DIR/usr/share/icons/hicolor/scalable/apps"
+          mkdir -p "$PKG_DIR/usr/share/icons/hicolor/512x512/apps"
+          mkdir -p "$PKG_DIR/usr/share/licenses/krebs"
+          mkdir -p "$PKG_DIR/usr/share/doc/krebs"
+
+          cp target/x86_64-unknown-linux-gnu/release/krebs "$PKG_DIR/usr/bin/krebs"
+          chmod 755 "$PKG_DIR/usr/bin/krebs"
+          cp packaging/linux/krebs.desktop "$PKG_DIR/usr/share/applications/krebs.desktop"
+          cp assets/logo.svg "$PKG_DIR/usr/share/icons/hicolor/scalable/apps/krebs.svg"
+          cp assets/logo.png "$PKG_DIR/usr/share/icons/hicolor/512x512/apps/krebs.png"
+          cp LICENSE "$PKG_DIR/usr/share/licenses/krebs/LICENSE"
+          cp README.md "$PKG_DIR/usr/share/doc/krebs/README.md"
+
+          INST_SIZE=$(du -sb "$PKG_DIR" | cut -f1)
+          BUILD_DATE=$(date +%s)
+
+          cat << EOF > "$PKG_DIR/.PKGINFO"
+          pkgname = krebs
+          pkgbase = krebs
+          pkgver = ${VERSION}-1
+          pkgdesc = Minimalist Writing & Infinite Whiteboard Studio in Pure Rust
+          url = https://github.com/ybreakless/Krebs
+          builddate = ${BUILD_DATE}
+          packager = ybreakless <https://github.com/ybreakless>
+          size = ${INST_SIZE}
+          arch = x86_64
+          license = MIT
+          depend = fontconfig
+          depend = libx11
+          depend = libxcursor
+          depend = libxrandr
+          depend = libxi
+          depend = libxinerama
+          depend = libxkbcommon
+          depend = mesa
+          depend = wayland
+          EOF
+
+          # Format file cleanly without leading spaces
+          sed -i 's/^[ \t]*//' "$PKG_DIR/.PKGINFO"
+
+          tar -C "$PKG_DIR" -c .PKGINFO usr | zstd -19 -T0 > "dist/krebs-${VERSION}-1-x86_64.pkg.tar.zst"
+
+      - name: Package Standalone Linux Tarball
+        run: |
+          VERSION="${{ steps.ver.outputs.VERSION }}"
+          TAR_DIR="krebs-v${VERSION}-x86_64-unknown-linux-gnu"
+          mkdir -p "$TAR_DIR"
+          cp target/x86_64-unknown-linux-gnu/release/krebs "$TAR_DIR/krebs"
+          cp packaging/linux/krebs.desktop "$TAR_DIR/"
+          cp assets/logo.svg "$TAR_DIR/"
+          cp assets/logo.png "$TAR_DIR/"
+          cp README.md "$TAR_DIR/"
+          cp LICENSE "$TAR_DIR/"
+          tar -czvf "dist/krebs-v${VERSION}-x86_64-unknown-linux-gnu.tar.gz" "$TAR_DIR"
+
+      - name: Upload Linux Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: dist/*
+
+  # -------------------------------------------------------------
+  # 2. Windows Packaging (ARM64, x86 32-bit, x64 64-bit)
+  # -------------------------------------------------------------
+  build-windows:
+    name: Windows Packages (${{ matrix.target }})
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        target:
+          - x86_64-pc-windows-msvc
+          - i686-pc-windows-msvc
+          - aarch64-pc-windows-msvc
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build Release Binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Determine Version
+        id: ver
+        shell: bash
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          if [ -z "$VERSION" ]; then
+            VERSION="${GITHUB_REF_NAME}"
+          fi
+          VERSION="${VERSION#v}"
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Package Windows Zip Archive
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.ver.outputs.VERSION }}"
+          $target = "${{ matrix.target }}"
+          $pkgDir = "krebs-v$ver-$target"
+          New-Item -ItemType Directory -Force -Path $pkgDir | Out-Null
+          New-Item -ItemType Directory -Force -Path "dist" | Out-Null
+
+          Copy-Item "target\$target\release\krebs.exe" "$pkgDir\Krebs.exe" -Force
+          Copy-Item "krebs_icon.ico" "$pkgDir\Krebs.ico" -Force
+          Copy-Item "assets\logo.svg" "$pkgDir\logo.svg" -Force
+          Copy-Item "assets\logo.png" "$pkgDir\logo.png" -Force
+          Copy-Item "install.ps1" "$pkgDir\install.ps1" -Force
+          Copy-Item "README.md" "$pkgDir\README.md" -Force
+          Copy-Item "LICENSE" "$pkgDir\LICENSE" -Force
+
+          Compress-Archive -Path "$pkgDir\*" -DestinationPath "dist\krebs-v$ver-$target.zip" -Force
+
+      - name: Upload Windows Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ matrix.target }}
+          path: dist/*.zip
+
+  # -------------------------------------------------------------
+  # 3. macOS Packaging (Intel, Apple Silicon, Universal .app & .dmg)
+  # -------------------------------------------------------------
+  build-macos:
+    name: macOS Packages (Intel, Apple Silicon, Universal DMG)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchains
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin,aarch64-apple-darwin
+
+      - name: Build Apple Silicon (aarch64-apple-darwin)
+        run: cargo build --release --target aarch64-apple-darwin
+
+      - name: Build Intel (x86_64-apple-darwin)
+        run: cargo build --release --target x86_64-apple-darwin
+
+      - name: Determine Version
+        id: ver
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          if [ -z "$VERSION" ]; then
+            VERSION="${GITHUB_REF_NAME}"
+          fi
+          VERSION="${VERSION#v}"
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create Individual Tarballs
+        run: |
+          VERSION="${{ steps.ver.outputs.VERSION }}"
+          mkdir -p dist
+
+          # Intel tarball
+          INTEL_DIR="krebs-v${VERSION}-x86_64-apple-darwin"
+          mkdir -p "$INTEL_DIR"
+          cp target/x86_64-apple-darwin/release/krebs "$INTEL_DIR/krebs"
+          cp README.md "$INTEL_DIR/"
+          cp LICENSE "$INTEL_DIR/"
+          tar -czvf "dist/krebs-v${VERSION}-x86_64-apple-darwin.tar.gz" "$INTEL_DIR"
+
+          # Apple Silicon tarball
+          ARM_DIR="krebs-v${VERSION}-aarch64-apple-darwin"
+          mkdir -p "$ARM_DIR"
+          cp target/aarch64-apple-darwin/release/krebs "$ARM_DIR/krebs"
+          cp README.md "$ARM_DIR/"
+          cp LICENSE "$ARM_DIR/"
+          tar -czvf "dist/krebs-v${VERSION}-aarch64-apple-darwin.tar.gz" "$ARM_DIR"
+
+      - name: Create Universal macOS App Bundle & DMG
+        run: |
+          VERSION="${{ steps.ver.outputs.VERSION }}"
+
+          # Combine binaries using lipo
+          lipo -create \
+            -output krebs_universal \
+            target/x86_64-apple-darwin/release/krebs \
+            target/aarch64-apple-darwin/release/krebs
+
+          # Generate krebs.icns from logo.png using macOS iconutil
+          mkdir -p krebs.iconset
+          sips -z 16 16     assets/logo.png --out krebs.iconset/icon_16x16.png
+          sips -z 32 32     assets/logo.png --out krebs.iconset/icon_16x16@2x.png
+          sips -z 32 32     assets/logo.png --out krebs.iconset/icon_32x32.png
+          sips -z 64 64     assets/logo.png --out krebs.iconset/icon_32x32@2x.png
+          sips -z 128 128   assets/logo.png --out krebs.iconset/icon_128x128.png
+          sips -z 256 256   assets/logo.png --out krebs.iconset/icon_128x128@2x.png
+          sips -z 256 256   assets/logo.png --out krebs.iconset/icon_256x256.png
+          sips -z 512 512   assets/logo.png --out krebs.iconset/icon_256x256@2x.png
+          sips -z 512 512   assets/logo.png --out krebs.iconset/icon_512x512.png
+          iconutil -c icns krebs.iconset -o krebs.icns
+
+          # Assemble App Bundle
+          APP_NAME="Krebs.app"
+          mkdir -p "$APP_NAME/Contents/MacOS"
+          mkdir -p "$APP_NAME/Contents/Resources"
+          cp packaging/macos/Info.plist "$APP_NAME/Contents/Info.plist"
+          echo -n "APPL????" > "$APP_NAME/Contents/PkgInfo"
+          cp krebs_universal "$APP_NAME/Contents/MacOS/krebs"
+          chmod 755 "$APP_NAME/Contents/MacOS/krebs"
+          cp krebs.icns "$APP_NAME/Contents/Resources/krebs.icns"
+
+          # Zip universal app
+          zip -r -y "dist/krebs-v${VERSION}-macos-universal.zip" "$APP_NAME"
+
+          # Create DMG
+          DMG_TMP="dmg_folder"
+          mkdir -p "$DMG_TMP"
+          cp -R "$APP_NAME" "$DMG_TMP/"
+          ln -s /Applications "$DMG_TMP/Applications"
+          hdiutil create -volname "Krebs" -srcfolder "$DMG_TMP" -ov -format UDZO "dist/krebs-v${VERSION}-macos-universal.dmg"
+
+      - name: Upload macOS Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-packages
+          path: dist/*
+
+  # -------------------------------------------------------------
+  # 4. GitHub Release Publisher & Checksums
+  # -------------------------------------------------------------
+  publish-release:
+    name: Publish Multi-Platform Release on GitHub
+    runs-on: ubuntu-latest
+    needs: [build-linux, build-windows, build-macos]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all built artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Generate SHA256 Checksums
+        run: |
+          cd release-assets
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Determine Tag
+        id: tag
+        run: |
+          TAG="${{ github.event.inputs.version }}"
+          if [ -z "$TAG" ]; then
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          if [[ ! "$TAG" =~ ^v ]]; then
+            TAG="v$TAG"
+          fi
+          echo "TAG=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Create or Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.TAG }}
+          name: "Krebs ${{ steps.tag.outputs.TAG }} — Multi-Platform Release"
+          draft: false
+          prerelease: false
+          files: release-assets/*
+          body: |
+            ## 🦀 Krebs ${{ steps.tag.outputs.TAG }} Multi-Platform Release
+            
+            Minimalist, distraction-free writing studio & infinite vector whiteboard in **100% pure Rust**.
+            
+            ---
+            
+            ### 📦 Linux Packages
+            - **Ubuntu / Debian / Linux Mint (APT):**
+              ```bash
+              sudo apt install ./krebs_*_amd64.deb
+              ```
+            - **Fedora / RHEL / CentOS (DNF):**
+              ```bash
+              sudo dnf install ./krebs-*.x86_64.rpm
+              ```
+            - **Arch Linux / Manjaro / EndeavourOS (Pacman):**
+              ```bash
+              sudo pacman -U ./krebs-*-x86_64.pkg.tar.zst
+              ```
+            - **Generic Linux Tarball:**
+              ```bash
+              tar -xzvf krebs-v*-x86_64-unknown-linux-gnu.tar.gz
+              ./krebs
+              ```
+            
+            ---
+            
+            ### 🪟 Windows Packages
+            - **Windows x64 (Intel/AMD 64-bit):** `krebs-v*-x86_64-pc-windows-msvc.zip`
+            - **Windows x86 (32-bit):** `krebs-v*-i686-pc-windows-msvc.zip`
+            - **Windows ARM64 (Surface / Snapdragon):** `krebs-v*-aarch64-pc-windows-msvc.zip`
+            
+            *Extract the zip and run `Krebs.exe` directly, or right-click `install.ps1` -> **Run with PowerShell** to install cleanly to Start Menu & Desktop.*
+            
+            ---
+            
+            ### 🍏 macOS Packages
+            - **macOS Universal Disk Image (.dmg):** `krebs-v*-macos-universal.dmg` *(Works natively on both Apple Silicon M1-M4 and Intel)*
+            - **macOS Universal App (.zip):** `krebs-v*-macos-universal.zip`
+            - **macOS Apple Silicon Tarball:** `krebs-v*-aarch64-apple-darwin.tar.gz`
+            - **macOS Intel Tarball:** `krebs-v*-x86_64-apple-darwin.tar.gz`
+            
+            *Drag `Krebs.app` into your `/Applications` folder.*
+            
+            ---
+            
+            ### 🔐 Integrity & Verification
+            Verify artifact authenticity using `SHA256SUMS.txt`:
+            ```bash
+            sha256sum -c SHA256SUMS.txt
+            ```

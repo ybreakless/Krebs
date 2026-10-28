@@ -12,6 +12,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Language-100%25%20Pure%20Rust-orange?style=flat-square&logo=rust" alt="Rust 100%" />
   <img src="https://img.shields.io/badge/GUI-iced%200.13%20%2B%20wgpu-blue?style=flat-square" alt="Iced GPU" />
+  <img src="https://img.shields.io/badge/Platforms-Linux%20%7C%20Windows%20%7C%20macOS-blueviolet?style=flat-square" alt="Platforms" />
   <img src="https://img.shields.io/badge/AI-Hermes%203%20%2F%20Ollama-8b5cf6?style=flat-square" alt="Hermes AI" />
   <img src="https://img.shields.io/badge/Privacy-100%25%20Local%20%26%20Zero%20Cloud-emerald?style=flat-square" alt="Zero Cloud" />
   <img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License" />
@@ -22,6 +23,39 @@
 ## 🌟 Overview
 
 **Krebs** is a blazingly fast, GPU-accelerated desktop writing studio and freehand whiteboard built in **100% pure Rust** (`iced` 0.13 + `wgpu`). It combines distraction-free typing, live Markdown split rendering, tablet stylus ink drawing, bidirectional trilingual text shaping (English, German, Persian), and a **private local Hermes AI Essay Coach** that evaluates your drafts on your own hardware with zero cloud telemetry.
+
+---
+
+## 📦 Multi-Platform Downloads & Packages
+
+Prebuilt releases for every major platform and package manager are available on the [**GitHub Releases**](https://github.com/ybreakless/Krebs/releases) page:
+
+### 🐧 Linux Packages
+| Distribution / Package Manager | Package / Command |
+|---|---|
+| **Ubuntu / Debian / Linux Mint (APT)** | Download `.deb` & run: `sudo apt install ./krebs_*_amd64.deb` |
+| **Fedora / RHEL / CentOS (DNF)** | Download `.rpm` & run: `sudo dnf install ./krebs-*.x86_64.rpm` |
+| **Arch Linux / Manjaro (Pacman)** | Download `.pkg.tar.zst` & run: `sudo pacman -U ./krebs-*.pkg.tar.zst` |
+| **Generic Linux (All Distros)** | Download `krebs-v*-x86_64-unknown-linux-gnu.tar.gz` and run `./krebs` |
+
+### 🪟 Windows Packages
+| Architecture | Package |
+|---|---|
+| **Windows x64 (Standard 64-bit Intel/AMD)** | `krebs-v*-x86_64-pc-windows-msvc.zip` |
+| **Windows x86 (Legacy 32-bit)** | `krebs-v*-i686-pc-windows-msvc.zip` |
+| **Windows ARM64 (Surface Pro / Snapdragon X)** | `krebs-v*-aarch64-pc-windows-msvc.zip` |
+
+> *Extract the archive and run `Krebs.exe` directly, or right-click `install.ps1` -> **Run with PowerShell** to register Start Menu & Desktop shortcuts.*
+
+### 🍏 macOS Packages
+| Package Type | Architecture / Compatibility |
+|---|---|
+| **Universal Installer Disk Image (.dmg)** | `krebs-v*-macos-universal.dmg` *(Apple Silicon M1/M2/M3/M4 & Intel)* |
+| **Universal Application Bundle (.zip)** | `krebs-v*-macos-universal.zip` |
+| **Apple Silicon Standalone Binary (.tar.gz)** | `krebs-v*-aarch64-apple-darwin.tar.gz` |
+| **Intel Mac Standalone Binary (.tar.gz)** | `krebs-v*-x86_64-apple-darwin.tar.gz` |
+
+> *Open `krebs-v*-macos-universal.dmg` and drag `Krebs.app` to your `/Applications` folder.*
 
 ---
 
@@ -134,30 +168,20 @@ Krebs/
 
 ---
 
-## 🛠️ Building & Installing
+## 🛠️ Building From Source
 
-### Windows 1-Click Install
-Run the included PowerShell installer from the repository root:
-```powershell
-.\install.ps1
-```
-This registers Krebs in your Windows Start Menu (`All Apps -> Krebs`) and adds a Desktop shortcut.
-
-### Build from Source
 Ensure you have Rust and Cargo installed:
-```powershell
+```bash
+git clone https://github.com/ybreakless/Krebs.git
+cd Krebs
 cargo build --release
 ```
-The optimized executable will be located at `target/release/krebs.exe`.
+The optimized executable will be located at `target/release/krebs` (`target/release/krebs.exe` on Windows).
 
-### Setting Up Local Hermes AI (Optional)
-To use deep LLM evaluation with Hermes 3:
-1. Install [Ollama](https://ollama.com/).
-2. Run the Hermes 3 model:
-   ```bash
-   ollama run hermes3
-   ```
-3. Open Krebs and click **Hermes AI** (`Ctrl+J`) in the top bar. You're ready to grade and polish essays locally!
+### Packaging Locally
+- **Linux:** Run `./packaging/linux/build_packages.sh` (produces `.deb`, `.rpm`, `.pkg.tar.zst`).
+- **Windows:** Run `powershell -ExecutionPolicy Bypass -File .\packaging\windows\package.ps1` (produces `.zip`).
+- **macOS:** Run `./packaging/macos/build_app.sh` (produces Universal `Krebs.app` and `.dmg`).
 
 ---
 

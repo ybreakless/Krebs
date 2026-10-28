@@ -2,12 +2,44 @@
 name = "krebs"
 version = "0.1.0"
 edition = "2021"
-authors = ["Krebs Team"]
-description = "Krebs - Portable Minimalist Writing Studio"
+authors = ["ybreakless <194576839+ybreakless@users.noreply.github.com>"]
+description = "Krebs - Minimalist Writing & Infinite Whiteboard Studio in Pure Rust"
+license = "MIT"
+repository = "https://github.com/ybreakless/Krebs"
+homepage = "https://github.com/ybreakless/Krebs"
+readme = "README.md"
+keywords = ["markdown", "editor", "whiteboard", "minimalist", "writing"]
+categories = ["text-editors", "graphics"]
 
 [[bin]]
 name = "krebs"
 path = "src/main.rs"
+
+[package.metadata.deb]
+name = "krebs"
+maintainer = "ybreakless <194576839+ybreakless@users.noreply.github.com>"
+copyright = "2026 ybreakless"
+license-file = ["LICENSE", "4"]
+extended-description = """\
+Krebs is an ultra-minimalist, trilingual (English, German, Persian) writing \
+and infinite vector whiteboard studio built with pure Rust."""
+section = "editors"
+priority = "optional"
+assets = [
+    ["target/release/krebs", "usr/bin/krebs", "755"],
+    ["packaging/linux/krebs.desktop", "usr/share/applications/krebs.desktop", "644"],
+    ["assets/logo.svg", "usr/share/icons/hicolor/scalable/apps/krebs.svg", "644"],
+    ["assets/logo.png", "usr/share/icons/hicolor/512x512/apps/krebs.png", "644"],
+    ["README.md", "usr/share/doc/krebs/README.md", "644"],
+]
+
+[package.metadata.generate-rpm]
+assets = [
+    { source = "target/release/krebs", dest = "/usr/bin/krebs", mode = "755" },
+    { source = "packaging/linux/krebs.desktop", dest = "/usr/share/applications/krebs.desktop", mode = "644" },
+    { source = "assets/logo.svg", dest = "/usr/share/icons/hicolor/scalable/apps/krebs.svg", mode = "644" },
+    { source = "assets/logo.png", dest = "/usr/share/icons/hicolor/512x512/apps/krebs.png", mode = "644" },
+]
 
 [dependencies]
 iced = { version = "0.13.1", features = ["advanced", "tokio", "canvas", "svg"] }
@@ -28,4 +60,3 @@ ureq = { version = "3.5.0", features = ["json"] }
 resvg = "0.42"
 usvg = "0.42"
 tiny-skia = "0.11"
-

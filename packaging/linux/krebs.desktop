@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=Krebs
+Comment=Minimalist Writing & Infinite Whiteboard Studio
+GenericName=Text Editor & Whiteboard
+Exec=krebs %F
+Icon=krebs
+Terminal=false
+Type=Application
+Categories=Office;WordProcessor;Utility;TextEditor;Graphics;
+MimeType=text/plain;text/markdown;
+StartupWMClass=krebs
+Keywords=Markdown;Editor;Whiteboard;Writing;Notes;Bidi;Persian;German;
