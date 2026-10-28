@@ -45,13 +45,56 @@ use theme::{
 use whiteboard::{PaperPattern, WhiteboardCanvas, WhiteboardMessage, WhiteboardState, WhiteboardTool};
 
 // Bundled Offline Fonts & Assets
-pub static KREBS_LOGO_PNG: &[u8] = include_bytes!("../assets/logo.png");
-pub static IBM_PLEX_MONO_REGULAR: &[u8] = include_bytes!("../fonts/IBMPlexMono-Regular.ttf");
+pub static KREBS_LOGO_PNG: &[u8] = include_bytes!("../assets/logo.png");pub static IBM_PLEX_MONO_REGULAR: &[u8] = include_bytes!("../fonts/IBMPlexMono-Regular.ttf");
 pub static IBM_PLEX_MONO_BOLD: &[u8] = include_bytes!("../fonts/IBMPlexMono-Bold.ttf");
 pub static VAZIRMATN_REGULAR: &[u8] = include_bytes!("../fonts/Vazirmatn-Regular.ttf");
 pub static VAZIRMATN_BOLD: &[u8] = include_bytes!("../fonts/Vazirmatn-Bold.ttf");
 pub static JETBRAINS_MONO_REGULAR: &[u8] = include_bytes!("../fonts/JetBrainsMono-Regular.ttf");
 pub static VT323_REGULAR: &[u8] = include_bytes!("../fonts/VT323-Regular.ttf");
+
+/// Wraps any widget in a bottom-anchored hover tooltip.
+///
+/// Every toolbar affordance gets one so compact labels stay discoverable; the
+/// hint text is conventionally spelled `Name (Shortcut)`, for example
+/// `Zen Mode (Ctrl+H)`.
+///
+/// # Arguments
+/// - `content` — the widget to annotate, typically an icon or pill button.
+/// - `label` — the full hint text shown on hover.
+///
+/// # Examples
+/// ```
+/// with_tooltip(btn_zen, "Zen Mode (Ctrl+H)").into()
+/// ```
+pub fn with_tooltip<'a, Msg: 'a, Label>(
+    content: impl Into<Element<'a, Msg>>,
+    label: Label,
+) -> Element<'a, Msg>
+where
+    Label: Into<String>,
+{
+    iced::widget::Tooltip::new(
+        content.into(),
+        iced::widget::text(label.into()),
+        iced::widget::tooltip::Position::Bottom,
+    )
+    .style(|_theme| container::Style {
+        background: Some(iced::Background::Color(Color::from_rgba(0.03, 0.04, 0.07, 0.97))),
+        border: iced::Border {
+            color: ACCENT_CYAN,
+            width: 1.0,
+            radius: iced::border::Radius::from(6.0),
+        },
+        text_color: Some(TEXT_PRIMARY),
+        shadow: iced::Shadow {
+            color: Color::from_rgba(0.0, 0.0, 0.0, 0.45),
+            offset: iced::Vector::new(0.0, 3.0),
+            blur_radius: 8.0,
+        },
+    })
+    .gap(6)
+    .into()
+}
 
 pub fn font_ibm_plex_mono() -> Font {
     Font {
@@ -808,7 +851,7 @@ impl Krebs {
 
             Message::WindowToggleMaximize => {
                 self.is_maximized = !self.is_maximized;
-                window::get_latest().and_then(|id| window::toggle_maximize(id))
+                window::get_latest().and_then(window::toggle_maximize)
             }
 
             Message::WindowClose => {
@@ -1806,21 +1849,30 @@ impl Krebs {
 
                 let splitter_bar = container(
                     column![
-                        button(center(text("◀").size(10).color(TEXT_MUTED)))
-                            .on_press(Message::AdjustSplitRatio(-0.05))
-                            .style(rail_button_style)
-                            .width(20)
-                            .height(28),
-                        button(center(text(format!("{}:{}", editor_portion, preview_portion)).size(9).color(ACCENT_CYAN)))
-                            .on_press(Message::CycleSplitPresets)
-                            .style(rail_button_style)
-                            .width(42)
-                            .height(24),
-                        button(center(text("▶").size(10).color(TEXT_MUTED)))
-                            .on_press(Message::AdjustSplitRatio(0.05))
-                            .style(rail_button_style)
-                            .width(20)
-                            .height(28),
+                        with_tooltip(
+                            button(center(text("◀").size(10).color(TEXT_MUTED)))
+                                .on_press(Message::AdjustSplitRatio(-0.05))
+                                .style(rail_button_style)
+                                .width(20)
+                                .height(32),
+                            "Shrink Editor Pane (Ctrl+[)",
+                        ),
+                        with_tooltip(
+                            button(center(text(format!("{}:{}", editor_portion, preview_portion)).size(9).color(ACCENT_CYAN)))
+                                .on_press(Message::CycleSplitPresets)
+                                .style(rail_button_style)
+                                .width(42)
+                                .height(24),
+                            "Cycle Split Presets",
+                        ),
+                        with_tooltip(
+                            button(center(text("▶").size(10).color(TEXT_MUTED)))
+                                .on_press(Message::AdjustSplitRatio(0.05))
+                                .style(rail_button_style)
+                                .width(20)
+                                .height(32),
+                            "Grow Editor Pane (Ctrl+]",
+                        ),
                     ]
                     .spacing(4)
                     .align_x(Alignment::Center),
@@ -2372,81 +2424,96 @@ impl Krebs {
         let is_writing = self.app_mode == AppMode::Writing;
         let write_tab_style = if is_writing { tab_active_button_style } else { tab_inactive_button_style };
         let btn_write = button(
-            row![
-                render_svg_icon(SVG_WRITE, 15, if is_writing { accent } else { TEXT_MUTED }),
-                text("Write").size(12.5),
-            ]
-            .spacing(6)
-            .align_y(Alignment::Center),
+            center(
+                row![
+                    render_svg_icon(SVG_WRITE, 15, if is_writing { accent } else { TEXT_MUTED }),
+                    text("Write").size(12.5),
+                ]
+                .spacing(6)
+                .align_y(Alignment::Center),
+            ),
         )
         .on_press(Message::SetAppMode(AppMode::Writing))
+        .height(32)
         .style(write_tab_style)
-        .padding(iced::Padding { top: 4.0, bottom: 4.0, left: 11.0, right: 11.0 });
+        .padding(iced::Padding { left: 12.0, right: 12.0, ..Default::default() });
 
         let is_whiteboard = self.app_mode == AppMode::Whiteboard;
         let board_tab_style = if is_whiteboard { tab_active_button_style } else { tab_inactive_button_style };
         let btn_board = button(
-            row![
-                render_svg_icon(SVG_WHITEBOARD, 15, if is_whiteboard { accent } else { TEXT_MUTED }),
-                text("Whiteboard").size(12.5),
-            ]
-            .spacing(6)
-            .align_y(Alignment::Center),
+            center(
+                row![
+                    render_svg_icon(SVG_WHITEBOARD, 15, if is_whiteboard { accent } else { TEXT_MUTED }),
+                    text("Whiteboard").size(12.5),
+                ]
+                .spacing(6)
+                .align_y(Alignment::Center),
+            ),
         )
         .on_press(Message::SetAppMode(AppMode::Whiteboard))
+        .height(32)
         .style(board_tab_style)
-        .padding(iced::Padding { top: 4.0, bottom: 4.0, left: 11.0, right: 11.0 });
+        .padding(iced::Padding { left: 12.0, right: 12.0, ..Default::default() });
 
         // 2. View Mode Segment: Edit | Split | Preview
         let btn_mode_edit = button(
-            row![
-                render_svg_icon(SVG_WRITE, 13, if self.view_mode == ViewMode::Edit { accent } else { TEXT_MUTED }),
-                text("Edit").size(12),
-            ]
-            .spacing(5)
-            .align_y(Alignment::Center),
+            center(
+                row![
+                    render_svg_icon(SVG_WRITE, 13, if self.view_mode == ViewMode::Edit { accent } else { TEXT_MUTED }),
+                    text("Edit").size(12),
+                ]
+                .spacing(5)
+                .align_y(Alignment::Center),
+            ),
         )
         .on_press(Message::SetViewMode(ViewMode::Edit))
+        .height(32)
         .style(if self.view_mode == ViewMode::Edit { tab_active_button_style } else { tab_inactive_button_style })
-        .padding(iced::Padding { top: 4.0, bottom: 4.0, left: 9.0, right: 9.0 });
+        .padding(iced::Padding { left: 10.0, right: 10.0, ..Default::default() });
 
         let btn_mode_split = button(
-            row![
-                render_svg_icon(SVG_SPLIT, 13, if self.view_mode == ViewMode::Split { accent } else { TEXT_MUTED }),
-                text("Live Split").size(12),
-            ]
-            .spacing(5)
-            .align_y(Alignment::Center),
+            center(
+                row![
+                    render_svg_icon(SVG_SPLIT, 13, if self.view_mode == ViewMode::Split { accent } else { TEXT_MUTED }),
+                    text("Live Split").size(12),
+                ]
+                .spacing(5)
+                .align_y(Alignment::Center),
+            ),
         )
         .on_press(Message::SetViewMode(ViewMode::Split))
+        .height(32)
         .style(if self.view_mode == ViewMode::Split { tab_active_button_style } else { tab_inactive_button_style })
-        .padding(iced::Padding { top: 4.0, bottom: 4.0, left: 9.0, right: 9.0 });
+        .padding(iced::Padding { left: 10.0, right: 10.0, ..Default::default() });
 
         let btn_mode_preview = button(
-            row![
-                render_svg_icon(SVG_PREVIEW, 13, if self.view_mode == ViewMode::Preview { accent } else { TEXT_MUTED }),
-                text("Preview").size(12),
-            ]
-            .spacing(5)
-            .align_y(Alignment::Center),
+            center(
+                row![
+                    render_svg_icon(SVG_PREVIEW, 13, if self.view_mode == ViewMode::Preview { accent } else { TEXT_MUTED }),
+                    text("Preview").size(12),
+                ]
+                .spacing(5)
+                .align_y(Alignment::Center),
+            ),
         )
         .on_press(Message::SetViewMode(ViewMode::Preview))
+        .height(32)
         .style(if self.view_mode == ViewMode::Preview { tab_active_button_style } else { tab_inactive_button_style })
-        .padding(iced::Padding { top: 4.0, bottom: 4.0, left: 9.0, right: 9.0 });
+        .padding(iced::Padding { left: 10.0, right: 10.0, ..Default::default() });
 
         let left_cluster = if self.app_mode == AppMode::Writing {
             row![
-                btn_write,
-                btn_board,
+                with_tooltip(btn_write, "Writing Studio - Markdown editor & reader"),
+                with_tooltip(btn_board, "Whiteboard (Ctrl+M)"),
                 Space::with_width(8),
-                btn_mode_edit,
-                btn_mode_split,
-                btn_mode_preview,
+                with_tooltip(btn_mode_edit, "Edit - Markdown source (Ctrl+1)"),
+                with_tooltip(btn_mode_split, "Split View - editor + live preview (Ctrl+2)"),
+                with_tooltip(btn_mode_preview, "Reader - rendered preview (Ctrl+3)"),
             ]
         } else {
             row![
-                btn_write,
-                btn_board,
+                with_tooltip(btn_write, "Writing Studio - Markdown editor & reader"),
+                with_tooltip(btn_board, "Whiteboard (Ctrl+M)"),
             ]
         }
         .spacing(4)
@@ -2475,59 +2542,71 @@ impl Krebs {
         let is_ai_open = self.config.show_right_drawer && self.right_drawer_tab == RightDrawerTab::AiCoach;
         let agent_label = format!("✨ Agent: {} ▼", self.ai_state.provider.label());
         let btn_ai = button(
-            row![
-                render_svg_icon(SVG_ROBOT, 14, if is_ai_open { accent } else { ACCENT_CYAN }),
-                text(agent_label).size(12).color(if is_ai_open { accent } else { TEXT_PRIMARY }),
-            ]
-            .spacing(5)
-            .align_y(Alignment::Center),
+            center(
+                row![
+                    render_svg_icon(SVG_ROBOT, 14, if is_ai_open { accent } else { ACCENT_CYAN }),
+                    text(agent_label).size(12).color(if is_ai_open { accent } else { TEXT_PRIMARY }),
+                ]
+                .spacing(5)
+                .align_y(Alignment::Center),
+            ),
         )
         .on_press(Message::ToggleAiDrawer)
+        .height(32)
         .style(if is_ai_open { tab_active_button_style } else { rail_button_style })
-        .padding(iced::Padding { top: 4.0, bottom: 4.0, left: 9.0, right: 9.0 });
+        .padding(iced::Padding { left: 10.0, right: 10.0, ..Default::default() });
 
         let maybe_split_pill = if self.app_mode == AppMode::Writing && self.view_mode == ViewMode::Split {
             let pct = (self.config.split_ratio * 100.0).round() as u16;
             Some(
                 button(
-                    row![
-                        render_svg_icon(SVG_SPLIT, 12, ACCENT_CYAN),
-                        text(format!("Split {}:{}", pct, 100 - pct)).size(11.5).color(TEXT_PRIMARY),
-                    ]
-                    .spacing(4)
-                    .align_y(Alignment::Center),
+                    center(
+                        row![
+                            render_svg_icon(SVG_SPLIT, 12, ACCENT_CYAN),
+                            text(format!("Split {}:{}", pct, 100 - pct)).size(11.5).color(TEXT_PRIMARY),
+                        ]
+                        .spacing(4)
+                        .align_y(Alignment::Center),
+                    ),
                 )
                 .on_press(Message::CycleSplitPresets)
+                .height(32)
                 .style(rail_button_style)
-                .padding(iced::Padding { top: 4.0, bottom: 4.0, left: 8.0, right: 8.0 })
+                .padding(iced::Padding { left: 9.0, right: 9.0, ..Default::default() })
             )
         } else {
             None
         };
 
         let btn_width = button(
-            row![
-                render_svg_icon(SVG_WIDTH, 13, TEXT_MUTED),
-                text(self.canvas_width_mode.label()).size(12),
-            ]
-            .spacing(5)
-            .align_y(Alignment::Center),
+            center(
+                row![
+                    render_svg_icon(SVG_WIDTH, 13, TEXT_MUTED),
+                    text(self.canvas_width_mode.label()).size(12),
+                ]
+                .spacing(5)
+                .align_y(Alignment::Center),
+            ),
         )
         .on_press(Message::CycleWidthMode)
+        .height(32)
         .style(rail_button_style)
-        .padding(iced::Padding { top: 4.0, bottom: 4.0, left: 9.0, right: 9.0 });
+        .padding(iced::Padding { left: 10.0, right: 10.0, ..Default::default() });
 
         let btn_font = button(
-            row![
-                render_svg_icon(SVG_FONT, 13, TEXT_MUTED),
-                text(self.font_choice.display_name()).size(12),
-            ]
-            .spacing(5)
-            .align_y(Alignment::Center),
+            center(
+                row![
+                    render_svg_icon(SVG_FONT, 13, TEXT_MUTED),
+                    text(self.font_choice.display_name()).size(12),
+                ]
+                .spacing(5)
+                .align_y(Alignment::Center),
+            ),
         )
         .on_press(Message::ToggleFontModal)
+        .height(32)
         .style(rail_button_style)
-        .padding(iced::Padding { top: 4.0, bottom: 4.0, left: 9.0, right: 9.0 });
+        .padding(iced::Padding { left: 10.0, right: 10.0, ..Default::default() });
 
         let mins = self.timer_remaining_secs / 60;
         let secs = self.timer_remaining_secs % 60;
@@ -2535,84 +2614,99 @@ impl Krebs {
         let clock_color = if self.timer_is_running { accent } else { TEXT_MUTED };
 
         let btn_clock = button(
-            row![
-                render_svg_icon(SVG_TIMER, 13, clock_color),
-                text(clock_str).size(12).color(clock_color),
-            ]
-            .spacing(5)
-            .align_y(Alignment::Center),
+            center(
+                row![
+                    render_svg_icon(SVG_TIMER, 13, clock_color),
+                    text(clock_str).size(12).color(clock_color),
+                ]
+                .spacing(5)
+                .align_y(Alignment::Center),
+            ),
         )
         .on_press(Message::ZenTimerToggle)
+        .height(32)
         .style(rail_button_style)
-        .padding(iced::Padding { top: 4.0, bottom: 4.0, left: 9.0, right: 9.0 });
+        .padding(iced::Padding { left: 10.0, right: 10.0, ..Default::default() });
 
-        let btn_clock_presets = button(
-            center(render_svg_icon(SVG_CHEVRON_DOWN, 10, TEXT_MUTED))
-        )
-        .on_press(Message::ZenTimerTogglePresets)
-        .style(rail_button_style)
-        .padding(iced::Padding { top: 4.0, bottom: 4.0, left: 5.0, right: 5.0 });
+        let btn_clock_presets = button(center(render_svg_icon(SVG_CHEVRON_DOWN, 11, TEXT_MUTED)))
+            .on_press(Message::ZenTimerTogglePresets)
+            .width(32)
+            .height(32)
+            .style(rail_button_style);
 
         let btn_theme = button(center(render_svg_icon(SVG_THEME, 15, TEXT_MUTED)))
             .on_press(Message::ToggleThemeModal)
-            .style(rail_button_style)
-            .padding(iced::Padding::new(5.0));
+            .width(32)
+            .height(32)
+            .style(rail_button_style);
 
         let btn_tour = button(center(render_svg_icon(SVG_TOUR, 15, TEXT_MUTED)))
             .on_press(Message::ToggleTourModal)
-            .style(rail_button_style)
-            .padding(iced::Padding::new(5.0));
+            .width(32)
+            .height(32)
+            .style(rail_button_style);
 
         let btn_zen_hide = button(center(render_svg_icon(SVG_EYE, 15, TEXT_MUTED)))
             .on_press(Message::ToggleTopToolbar)
-            .style(rail_button_style)
-            .padding(iced::Padding::new(5.0));
+            .width(32)
+            .height(32)
+            .style(rail_button_style);
 
         let btn_min = button(center(render_svg_icon(SVG_MINIMIZE, 13, TEXT_MUTED)))
             .on_press(Message::WindowMinimize)
             .style(rail_button_style)
-            .width(30)
-            .height(26);
+            .width(32)
+            .height(32);
 
         let btn_max = button(center(render_svg_icon(SVG_FULLSCREEN, 13, TEXT_MUTED)))
             .on_press(Message::WindowToggleMaximize)
             .style(rail_button_style)
-            .width(30)
-            .height(26);
+            .width(32)
+            .height(32);
 
         let btn_close = button(center(render_svg_icon(SVG_CLOSE, 13, TEXT_MUTED)))
             .on_press(Message::WindowClose)
             .style(rail_button_style)
-            .width(30)
-            .height(26);
+            .width(32)
+            .height(32);
 
-        let mut right_cluster = row![btn_ai];
+        let mut right_cluster = row![with_tooltip(btn_ai, "AI Agent Drawer - Hermes, Claude, ChatGPT, DeepSeek (Ctrl+J)")];
         if let Some(split_pill) = maybe_split_pill {
-            right_cluster = right_cluster.push(split_pill);
+            right_cluster = right_cluster.push(with_tooltip(split_pill, "Cycle Split Presets - editor:previewer ratio"));
         }
         right_cluster = right_cluster
-            .push(btn_width)
-            .push(btn_font)
-            .push(btn_clock)
-            .push(btn_clock_presets)
-            .push(btn_theme)
-            .push(btn_tour)
-            .push(btn_zen_hide)
+            .push(with_tooltip(btn_width, "Cycle Text Width - narrow / normal / wide (Ctrl+W)"))
+            .push(with_tooltip(btn_font, "Typeface Selection"))
+            .push(with_tooltip(btn_clock, "Focus Timer - start / pause"))
+            .push(with_tooltip(btn_clock_presets, "Timer Presets - 15 / 25 / 45 / 60 min"))
+            .push(with_tooltip(btn_theme, "Theme Selector (Ctrl+T)"))
+            .push(with_tooltip(btn_tour, "Onboarding Tour (F1)"))
+            .push(with_tooltip(btn_zen_hide, "Zen Mode - hide toolbar (Ctrl+H)"))
             .push(Space::with_width(6))
-            .push(btn_min)
-            .push(btn_max)
-            .push(btn_close)
+            .push(with_tooltip(btn_min, "Minimize"))
+            .push(with_tooltip(btn_max, "Maximize / Restore (F11)"))
+            .push(with_tooltip(btn_close, "Close Krebs"))
             .spacing(4)
             .align_y(Alignment::Center);
 
         if self.show_timer_presets {
-            let p15 = button(text("15m").size(10)).on_press(Message::ZenTimerSet(900)).style(rail_button_style).padding(iced::Padding::new(3.0));
-            let p25 = button(text("25m").size(10)).on_press(Message::ZenTimerSet(1500)).style(rail_button_style).padding(iced::Padding::new(3.0));
-            let p45 = button(text("45m").size(10)).on_press(Message::ZenTimerSet(2700)).style(rail_button_style).padding(iced::Padding::new(3.0));
-            let p60 = button(text("60m").size(10)).on_press(Message::ZenTimerSet(3600)).style(rail_button_style).padding(iced::Padding::new(3.0));
-            let rst = button(center(render_svg_icon(SVG_RESET, 11, TEXT_MUTED))).on_press(Message::Sidebar(SidebarAction::TimerReset)).style(rail_button_style).padding(iced::Padding::new(3.0));
+            let p15 = button(center(text("15m").size(10.5))).on_press(Message::ZenTimerSet(900)).height(32).style(rail_button_style).padding(iced::Padding::new(6.0));
+            let p25 = button(center(text("25m").size(10.5))).on_press(Message::ZenTimerSet(1500)).height(32).style(rail_button_style).padding(iced::Padding::new(6.0));
+            let p45 = button(center(text("45m").size(10.5))).on_press(Message::ZenTimerSet(2700)).height(32).style(rail_button_style).padding(iced::Padding::new(6.0));
+            let p60 = button(center(text("60m").size(10.5))).on_press(Message::ZenTimerSet(3600)).height(32).style(rail_button_style).padding(iced::Padding::new(6.0));
+            let rst = button(center(render_svg_icon(SVG_RESET, 12, TEXT_MUTED))).on_press(Message::Sidebar(SidebarAction::TimerReset)).width(32).height(32).style(rail_button_style);
 
-            right_cluster = right_cluster.push(row![p15, p25, p45, p60, rst].spacing(2).align_y(Alignment::Center));
+            right_cluster = right_cluster.push(
+                row![
+                    with_tooltip(p15, "Focus for 15 minutes"),
+                    with_tooltip(p25, "Focus for 25 minutes"),
+                    with_tooltip(p45, "Focus for 45 minutes"),
+                    with_tooltip(p60, "Focus for 60 minutes"),
+                    with_tooltip(rst, "Reset Focus Timer"),
+                ]
+                .spacing(2)
+                .align_y(Alignment::Center),
+            );
         }
 
         let header_row = row![
@@ -2659,28 +2753,31 @@ impl Krebs {
             format!("{}/{}", self.search.current_idx + 1, self.search.matches.len())
         };
 
-        let btn_prev = button(text("↑").size(11))
+        let btn_prev = button(center(text("↑").size(11)))
             .on_press(Message::SearchPrev)
             .style(rail_button_style)
-            .padding(iced::Padding::new(4.0));
+            .width(32)
+            .height(32);
 
-        let btn_next = button(text("↓").size(11))
+        let btn_next = button(center(text("↓").size(11)))
             .on_press(Message::SearchNext)
             .style(rail_button_style)
-            .padding(iced::Padding::new(4.0));
+            .width(32)
+            .height(32);
 
         let btn_close = button(center(render_svg_icon(SVG_CLOSE, 11, TEXT_MUTED)))
             .on_press(Message::CloseSearch)
             .style(rail_button_style)
-            .padding(iced::Padding::new(4.0));
+            .width(32)
+            .height(32);
 
         let search_row = row![
             render_svg_icon(SVG_SEARCH, 13, ACCENT_CYAN),
             input,
             text(match_label).size(11).color(ACCENT_CYAN),
-            btn_prev,
-            btn_next,
-            btn_close,
+            with_tooltip(btn_prev, "Previous Match (Enter / Shift+F3)"),
+            with_tooltip(btn_next, "Next Match (Enter)"),
+            with_tooltip(btn_close, "Close Search (Ctrl+F)"),
         ]
         .spacing(8)
         .align_y(Alignment::Center);

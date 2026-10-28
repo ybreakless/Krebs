@@ -1,4 +1,3 @@
-use iced::alignment::Horizontal;
 use iced::widget::{button, center, column, container, row, text, Space};
 use iced::{Alignment, Color, Element, Length};
 
@@ -10,6 +9,7 @@ use crate::theme::{
     rail_button_style, rail_container_style, ACCENT_AMBER, ACCENT_CYAN, ACCENT_GREEN, ACCENT_RED,
     BORDER_COLOR, TEXT_HOVER, TEXT_MUTED, TEXT_PRIMARY,
 };
+use crate::with_tooltip;
 
 #[derive(Debug, Clone)]
 pub enum SidebarAction {
@@ -125,30 +125,54 @@ pub fn view_left_rail<'a>(
     } else {
         (SVG_WRITE, TEXT_HOVER)
     };
-    let btn_mode = sidebar_icon_button(
-        mode_svg,
-        16,
-        mode_color,
-        SidebarAction::ToggleAppMode,
-        is_whiteboard_active,
+    let btn_mode = with_tooltip(
+        sidebar_icon_button(
+            mode_svg,
+            16,
+            mode_color,
+            SidebarAction::ToggleAppMode,
+            is_whiteboard_active,
+        ),
+        "Switch Writing / Whiteboard Studio (Ctrl+M)",
     );
 
-    let btn_help = sidebar_icon_button(
-        SVG_TOUR,
-        16,
-        TEXT_MUTED,
-        SidebarAction::ToggleShortcutsModal,
-        false,
+    let btn_help = with_tooltip(
+        sidebar_icon_button(
+            SVG_TOUR,
+            16,
+            TEXT_MUTED,
+            SidebarAction::ToggleShortcutsModal,
+            false,
+        ),
+        "Keyboard Shortcuts & Help",
     );
 
     // If Whiteboard Studio is active, display dedicated tablet drawing tools in the rail
     if is_whiteboard_active {
-        let btn_pen = sidebar_icon_button(SVG_PEN, 16, ACCENT_CYAN, SidebarAction::WhiteboardToolPen, false);
-        let btn_hl = sidebar_icon_button(SVG_HIGHLIGHTER, 16, TEXT_MUTED, SidebarAction::WhiteboardToolHighlighter, false);
-        let btn_eraser = sidebar_icon_button(SVG_ERASER, 16, TEXT_MUTED, SidebarAction::WhiteboardToolEraser, false);
-        let btn_undo = sidebar_icon_button(SVG_UNDO, 16, TEXT_MUTED, SidebarAction::WhiteboardUndo, false);
-        let btn_redo = sidebar_icon_button(SVG_REDO, 16, TEXT_MUTED, SidebarAction::WhiteboardRedo, false);
-        let btn_wipe = sidebar_icon_button(SVG_WIPE, 16, ACCENT_RED, SidebarAction::WhiteboardWipe, false);
+        let btn_pen = with_tooltip(
+            sidebar_icon_button(SVG_PEN, 16, ACCENT_CYAN, SidebarAction::WhiteboardToolPen, false),
+            "Pen - ink strokes",
+        );
+        let btn_hl = with_tooltip(
+            sidebar_icon_button(SVG_HIGHLIGHTER, 16, TEXT_MUTED, SidebarAction::WhiteboardToolHighlighter, false),
+            "Highlighter",
+        );
+        let btn_eraser = with_tooltip(
+            sidebar_icon_button(SVG_ERASER, 16, TEXT_MUTED, SidebarAction::WhiteboardToolEraser, false),
+            "Eraser",
+        );
+        let btn_undo = with_tooltip(
+            sidebar_icon_button(SVG_UNDO, 16, TEXT_MUTED, SidebarAction::WhiteboardUndo, false),
+            "Undo Stroke (Ctrl+Z)",
+        );
+        let btn_redo = with_tooltip(
+            sidebar_icon_button(SVG_REDO, 16, TEXT_MUTED, SidebarAction::WhiteboardRedo, false),
+            "Redo Stroke (Ctrl+Y)",
+        );
+        let btn_wipe = with_tooltip(
+            sidebar_icon_button(SVG_WIPE, 16, ACCENT_RED, SidebarAction::WhiteboardWipe, false),
+            "Wipe Board Clean",
+        );
 
         let rail_col = column![
             btn_mode,
@@ -181,47 +205,101 @@ pub fn view_left_rail<'a>(
     }
 
     // 2. File Actions
-    let btn_new = sidebar_icon_button(SVG_NEW, 16, TEXT_MUTED, SidebarAction::NewFile, false);
-    let btn_open = sidebar_icon_button(SVG_OPEN, 16, TEXT_MUTED, SidebarAction::OpenFile, false);
-    let btn_save = sidebar_icon_button(SVG_SAVE, 16, TEXT_MUTED, SidebarAction::SaveFile, false);
-    let btn_search = sidebar_icon_button(
-        SVG_SEARCH,
-        15,
-        if is_search_open { ACCENT_CYAN } else { TEXT_MUTED },
-        SidebarAction::ToggleSearch,
-        is_search_open,
+    let btn_new = with_tooltip(
+        sidebar_icon_button(SVG_NEW, 16, TEXT_MUTED, SidebarAction::NewFile, false),
+        "New Document (Ctrl+N)",
+    );
+    let btn_open = with_tooltip(
+        sidebar_icon_button(SVG_OPEN, 16, TEXT_MUTED, SidebarAction::OpenFile, false),
+        "Open Document (Ctrl+O)",
+    );
+    let btn_save = with_tooltip(
+        sidebar_icon_button(SVG_SAVE, 16, TEXT_MUTED, SidebarAction::SaveFile, false),
+        "Save Document (Ctrl+S)",
+    );
+    let btn_search = with_tooltip(
+        sidebar_icon_button(
+            SVG_SEARCH,
+            15,
+            if is_search_open { ACCENT_CYAN } else { TEXT_MUTED },
+            SidebarAction::ToggleSearch,
+            is_search_open,
+        ),
+        "Search in Document (Ctrl+F)",
     );
 
     // 3. View & Typography Tools
-    let btn_view = sidebar_icon_button(SVG_SPLIT, 16, TEXT_MUTED, SidebarAction::CycleViewMode, false);
-    let btn_width = sidebar_icon_button(SVG_WIDTH, 16, TEXT_MUTED, SidebarAction::CycleWidthMode, false);
-    let btn_font = sidebar_icon_button(SVG_FONT, 16, TEXT_MUTED, SidebarAction::ToggleFontModal, false);
-    let btn_export = sidebar_icon_button(SVG_EXPORT, 16, TEXT_MUTED, SidebarAction::ExportHtml, false);
+    let btn_view = with_tooltip(
+        sidebar_icon_button(SVG_SPLIT, 16, TEXT_MUTED, SidebarAction::CycleViewMode, false),
+        "Cycle View - Edit / Split / Preview (Ctrl+1/2/3)",
+    );
+    let btn_width = with_tooltip(
+        sidebar_icon_button(SVG_WIDTH, 16, TEXT_MUTED, SidebarAction::CycleWidthMode, false),
+        "Cycle Text Width (Ctrl+W)",
+    );
+    let btn_font = with_tooltip(
+        sidebar_icon_button(SVG_FONT, 16, TEXT_MUTED, SidebarAction::ToggleFontModal, false),
+        "Typeface Selection",
+    );
+    let btn_export = with_tooltip(
+        sidebar_icon_button(SVG_EXPORT, 16, TEXT_MUTED, SidebarAction::ExportHtml, false),
+        "Export to HTML (Ctrl+P)",
+    );
 
     // 4. Markdown Quick Formatting Buttons
-    let btn_h1 = sidebar_text_button("H1", 11, SidebarAction::FormatHeading1, false);
-    let btn_bold = sidebar_text_button("B", 13, SidebarAction::FormatBold, false);
-    let btn_italic = sidebar_text_button("I", 13, SidebarAction::FormatItalic, false);
-    let btn_strike = sidebar_text_button("S", 12, SidebarAction::FormatStrikethrough, false);
-    let btn_quote = sidebar_text_button("”", 14, SidebarAction::FormatBlockquote, false);
-    let btn_list = sidebar_icon_button(SVG_LIST, 15, TEXT_MUTED, SidebarAction::FormatList, false);
+    let btn_h1 = with_tooltip(
+        sidebar_text_button("H1", 11, SidebarAction::FormatHeading1, false),
+        "Heading 1 - insert `# `",
+    );
+    let btn_bold = with_tooltip(
+        sidebar_text_button("B", 13, SidebarAction::FormatBold, false),
+        "Bold (Ctrl+B)",
+    );
+    let btn_italic = with_tooltip(
+        sidebar_text_button("I", 13, SidebarAction::FormatItalic, false),
+        "Italic (Ctrl+I)",
+    );
+    let btn_strike = with_tooltip(
+        sidebar_text_button("S", 12, SidebarAction::FormatStrikethrough, false),
+        "Strikethrough",
+    );
+    let btn_quote = with_tooltip(
+        sidebar_text_button("”", 14, SidebarAction::FormatBlockquote, false),
+        "Blockquote - insert `> `",
+    );
+    let btn_list = with_tooltip(
+        sidebar_icon_button(SVG_LIST, 15, TEXT_MUTED, SidebarAction::FormatList, false),
+        "Bullet List - insert `- `",
+    );
 
     // 5. Trilingual & Exam Tools
-    let btn_direction = sidebar_icon_button(SVG_BIDI, 15, TEXT_MUTED, SidebarAction::CycleDirection, false);
-    let btn_german = sidebar_text_button("äö", 11, SidebarAction::ToggleGermanBar, is_german_bar_open);
-    let btn_ai = sidebar_icon_button(
-        SVG_AI,
-        16,
-        if is_ai_drawer_open { ACCENT_CYAN } else { TEXT_MUTED },
-        SidebarAction::ToggleAiCoach,
-        is_ai_drawer_open,
+    let btn_direction = with_tooltip(
+        sidebar_icon_button(SVG_BIDI, 15, TEXT_MUTED, SidebarAction::CycleDirection, false),
+        "Toggle Text Direction - LTR / RTL",
     );
-    let btn_exam = sidebar_icon_button(
-        SVG_TIMER,
-        16,
-        if is_exam_drawer_open { ACCENT_CYAN } else { TEXT_MUTED },
-        SidebarAction::ToggleRightDrawer,
-        is_exam_drawer_open,
+    let btn_german = with_tooltip(
+        sidebar_text_button("äö", 11, SidebarAction::ToggleGermanBar, is_german_bar_open),
+        "German Umlauts & Characters",
+    );
+    let btn_ai = with_tooltip(
+        sidebar_icon_button(
+            SVG_AI,
+            16,
+            if is_ai_drawer_open { ACCENT_CYAN } else { TEXT_MUTED },
+            SidebarAction::ToggleAiCoach,
+            is_ai_drawer_open,
+        ),
+        "AI Coach - essay grading & grammar (Ctrl+J)",
+    );
+    let btn_exam = with_tooltip(
+        sidebar_icon_button(
+            SVG_TIMER,
+            16,
+            if is_exam_drawer_open { ACCENT_CYAN } else { TEXT_MUTED },
+            SidebarAction::ToggleRightDrawer,
+            is_exam_drawer_open,
+        ),
+        "Exam Coach Drawer - Redemittel & targets (Ctrl+E)",
     );
 
     let mut rail_col = column![
@@ -262,11 +340,14 @@ pub fn view_left_rail<'a>(
         let de_keys = ["ä", "ö", "ü", "ß", "Ä", "Ö", "Ü", "„", "“", "–"];
         let mut de_col = column![create_divider()].spacing(3).align_x(Alignment::Center);
         for k in de_keys {
-            let b = button(text(k).size(11).align_x(Horizontal::Center))
-                .on_press(SidebarAction::InsertGermanChar(k))
-                .style(rail_button_style)
-                .width(28)
-                .height(24);
+            let b = with_tooltip(
+                button(center(text(k).size(11)))
+                    .on_press(SidebarAction::InsertGermanChar(k))
+                    .style(rail_button_style)
+                    .width(32)
+                    .height(32),
+                format!("Insert \"{}\"", k),
+            );
             de_col = de_col.push(b);
         }
         rail_col = rail_col.push(de_col);

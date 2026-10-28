@@ -27,10 +27,10 @@ Repository: `ybreakless/Krebs` Â· Release target: **v1.0.0** (from `0.1.0`)
 
 ## Phase 3 â€” Button Ergonomics & Visual Clarity (`feat/button-clarity`)
 
-- [ ] Replace ambiguous/abbreviated labels with clear icon + label pills
-- [ ] Tooltips with shortcut on every action (`Zen Mode (Ctrl+H)`, `Whiteboard (Ctrl+M)`, `Split View (Ctrl+2)`, `Prompt Studio (Ctrl+Shift+P)`, â€¦)
-- [ ] Active view: crisp high-contrast border + subtle glow; unmistakable current view
-- [ ] Minimum 32px hit targets for mouse & touch
+[x] Replace ambiguous/abbreviated labels with clear icon + label pills
+[x] Tooltips with shortcut on every action (`Zen Mode (Ctrl+H)`, `Whiteboard (Ctrl+M)`, `Split View (Ctrl+2)`, `Prompt Studio (Ctrl+Shift+P)`, â€¦)
+[x] Active view: crisp high-contrast border + subtle glow; unmistakable current view
+[x] Minimum 32px hit targets for mouse & touch
 
 ## Phase 4 â€” 10-Language i18n & BiDi (`feat/multilingual-i18n`)
 
@@ -88,5 +88,6 @@ Repository: `ybreakless/Krebs` Â· Release target: **v1.0.0** (from `0.1.0`)
 - [ ] README reflects: 10 languages, Prompt Studio & MCP, font importer, whiteboard templates, export formats
 - [ ] Packaging scripts sanity: `package.ps1`, `build_packages.sh`, `release.yml` consistent with v1.0.0 artifact naming
 - [ ] Bump version to 1.0.0, final merge `chore(release): v1.0.0 production ready release`, clean tree
+
 
 

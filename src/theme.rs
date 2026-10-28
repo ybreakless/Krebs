@@ -445,11 +445,16 @@ pub fn tab_active_button_style(_theme: &iced::Theme, _status: button::Status) ->
         background: Some(Background::Color(SURFACE_ACTIVE)),
         border: Border {
             color: ACCENT_CYAN,
-            width: 1.0,
+            width: 1.5,
             radius: Radius::from(6.0),
         },
+        // Subtle cyan glow so the selected view reads unmistakably active.
+        shadow: Shadow {
+            color: Color::from_rgba(0.22, 0.74, 0.97, 0.20),
+            offset: iced::Vector::new(0.0, 0.0),
+            blur_radius: 10.0,
+        },
         text_color: ACCENT_CYAN,
-        ..Default::default()
     }
 }
 
@@ -469,6 +474,7 @@ pub fn tab_inactive_button_style(_theme: &iced::Theme, status: button::Status) -
         button::Status::Active => base,
         button::Status::Hovered => button::Style {
             background: Some(Background::Color(SURFACE_HOVER)),
+            border: Border { color: BORDER_COLOR, width: 1.0, ..base.border },
             text_color: TEXT_HOVER,
             ..base
         },

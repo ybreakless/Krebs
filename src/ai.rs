@@ -319,7 +319,7 @@ pub fn evaluate_essay_offline(draft: &str, action: AiAction) -> String {
     let p_count = paragraphs.len().max(1);
 
     let sentences: Vec<&str> = draft
-        .split(|c| c == '.' || c == '!' || c == '?' || c == '؛' || c == '؟')
+        .split(['.', '!', '?', '؛', '؟'])
         .map(|s| s.trim())
         .filter(|s| !s.is_empty())
         .collect();
@@ -354,19 +354,19 @@ pub fn evaluate_essay_offline(draft: &str, action: AiAction) -> String {
             let mut score = 65; // baseline
 
             // Length score
-            if word_count >= 180 && word_count <= 350 {
+            if (180..=350).contains(&word_count) {
                 score += 12;
             } else if word_count > 100 {
                 score += 6;
             }
 
             // Paragraph structure
-            if p_count >= 3 && p_count <= 6 {
+            if (3..=6).contains(&p_count) {
                 score += 8;
             }
 
             // Sentence variation
-            if avg_words_per_sentence >= 11.0 && avg_words_per_sentence <= 22.0 {
+            if (11.0..=22.0).contains(&avg_words_per_sentence) {
                 score += 8;
             }
 
@@ -423,7 +423,7 @@ pub fn evaluate_essay_offline(draft: &str, action: AiAction) -> String {
                 } else {
                     "Consider splitting your draft into a clear Introduction, Body Arguments, and Conclusion."
                 },
-                flow_comment = if avg_words_per_sentence >= 12.0 && avg_words_per_sentence <= 22.0 {
+                flow_comment = if (12.0..=22.0).contains(&avg_words_per_sentence) {
                     "Good sentence length equilibrium; easy to read and logically coherent."
                 } else {
                     "Sentences are either too short or run-on; vary short punchy sentences with compound clauses."
