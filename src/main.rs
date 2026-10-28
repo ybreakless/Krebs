@@ -3204,6 +3204,7 @@ mod tests {
         assert!(app.show_top_toolbar);
 
         // 13. Test Hermes AI Drawer toggle and actions
+        app.config.show_right_drawer = false;
         let _ = app.update(Message::ToggleAiDrawer);
         assert!(app.config.show_right_drawer);
         assert_eq!(app.right_drawer_tab, RightDrawerTab::AiCoach);
