@@ -4,9 +4,20 @@
 # Usage:
 #   Local:  powershell -ExecutionPolicy Bypass -File .\install.ps1
 #   Remote: irm https://raw.githubusercontent.com/ybreakless/Krebs/main/install.ps1 | iex
+#
+# Acquisition order:
+#   1. Locally built binary        (target\release\krebs.exe)
+#   2. Binary next to this script  (e.g. extracted release zip)
+#   3. GitHub release archive      (krebs-$tag-$target.zip, matches release.yml)
+#   4. Build from source           (main.zip -> temp -> cargo build --release)
 # ==============================================================================
 
 $ErrorActionPreference = "Stop"
+
+$repoOwner = "ybreakless"
+$repoName  = "Krebs"
+$repoUrl   = "https://github.com/$repoOwner/$repoName"
+$fallbackTag = "v0.1.0"
 
 $installDir = "$env:LOCALAPPDATA\Programs\Krebs"
 $dataDir = Join-Path $installDir "krebs_data"
@@ -27,70 +38,150 @@ $baseDir = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
 $releaseExe = Join-Path $baseDir "target\release\krebs.exe"
 $destExe = Join-Path $installDir "Krebs.exe"
 
+# ------------------------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------------------------
+
+function Get-LatestReleaseTag {
+    # Returns the newest published release tag, or $fallbackTag when the
+    # repository has no release yet or the lookup fails (offline, rate limit).
+    try {
+        $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$repoOwner/$repoName/releases/latest" -UseBasicParsing
+        if ($release.tag_name) { return [string]$release.tag_name }
+    } catch {
+        Write-Host "Could not query latest release, falling back to $fallbackTag" -ForegroundColor DarkGray
+    }
+    return $fallbackTag
+}
+
+function Get-CargoHome {
+    # Returns the resolved cargo executable path, or $null when absent.
+    if (Get-Command "cargo" -ErrorAction SilentlyContinue) {
+        return (Get-Command "cargo").Source
+    }
+    $cargoHome = if ($env:CARGO_HOME) { $env:CARGO_HOME } else { "$env:USERPROFILE\.cargo" }
+    $cargoExe = Join-Path $cargoHome "bin\cargo.exe"
+    if (Test-Path $cargoExe) { return $cargoExe }
+    return $null
+}
+
+function Install-InstalledBinary([string]$SourceExe) {
+    Copy-Item -Force $SourceExe $destExe
+    # Carry along any runtime DLLs shipped beside the binary.
+    Get-ChildItem -Path (Split-Path -Parent $SourceExe) -Filter "*.dll" -ErrorAction SilentlyContinue |
+        ForEach-Object { Copy-Item -Force $_.FullName (Join-Path $installDir $_.Name) }
+}
+
+function Install-FromReleaseArchive {
+    param([string]$Tag, [string]$Target)
+
+    $zipUrl = "$repoUrl/releases/download/$Tag/krebs-$Tag-$Target.zip"
+    $tmpZip = Join-Path $env:TEMP "krebs-release.zip"
+    $tmpExtract = Join-Path $env:TEMP "krebs-extract"
+
+    Write-Host ">>> Fetching latest release package from GitHub..." -ForegroundColor Cyan
+    Write-Host "    $zipUrl" -ForegroundColor DarkGray
+    Invoke-WebRequest -Uri $zipUrl -OutFile $tmpZip -UseBasicParsing
+    Expand-Archive -Path $tmpZip -DestinationPath $tmpExtract -Force
+    $foundExe = Get-ChildItem -Path $tmpExtract -Recurse -Filter "Krebs.exe" | Select-Object -First 1
+    if (-not $foundExe) { throw "Release archive did not contain Krebs.exe" }
+    Install-InstalledBinary $foundExe.FullName
+    Remove-Item -Force $tmpZip -ErrorAction SilentlyContinue
+    Remove-Item -Recurse -Force $tmpExtract -ErrorAction SilentlyContinue
+}
+
+function Install-FromSource {
+    # Last resort: download the source snapshot, build it, ship the binary.
+    $buildDir = Join-Path $env:TEMP "krebs-build"
+    $srcZip = Join-Path $buildDir "krebs-main.zip"
+    $zipUrl = "$repoUrl/archive/refs/heads/main.zip"
+
+    Write-Host ">>> Building Krebs from source (this may take a few minutes)..." -ForegroundColor Yellow
+
+    try {
+        Remove-Item -Recurse -Force $buildDir -ErrorAction SilentlyContinue
+        New-Item -ItemType Directory -Force $buildDir | Out-Null
+        Write-Host "    Downloading source snapshot..." -ForegroundColor DarkGray
+        Invoke-WebRequest -Uri $zipUrl -OutFile $srcZip -UseBasicParsing
+        Expand-Archive -Path $srcZip -DestinationPath $buildDir -Force
+
+        # Locate the extracted project root (the folder containing Cargo.toml).
+        $projectDir = Get-ChildItem -Path $buildDir -Recurse -Filter "Cargo.toml" |
+            Select-Object -First 1 |
+            ForEach-Object { $_.DirectoryName }
+        if (-not $projectDir) { throw "Downloaded source snapshot contains no Cargo.toml" }
+
+        Write-Host "    Running: cargo build --release" -ForegroundColor DarkGray
+        Push-Location $projectDir
+        try {
+            & cargo build --release
+            if ($LASTEXITCODE -ne 0) { throw "cargo build --release exited with code $LASTEXITCODE" }
+        } finally {
+            Pop-Location
+        }
+
+        $builtExe = Join-Path $projectDir "target\release\krebs.exe"
+        if (-not (Test-Path $builtExe)) { throw "cargo reported success but target\release\krebs.exe is missing" }
+        Install-InstalledBinary $builtExe
+        Write-Host "[OK] Built and installed from source." -ForegroundColor Green
+    } finally {
+        Remove-Item -Recurse -Force $buildDir -ErrorAction SilentlyContinue
+    }
+}
+
+# ------------------------------------------------------------------------------
 # 1. Locate, Download, or Build Release Binary
+# ------------------------------------------------------------------------------
+$pipelineStart = [System.Diagnostics.Stopwatch]::StartNew()
+
 if (Test-Path $releaseExe) {
-    Copy-Item -Force $releaseExe $destExe
+    Write-Host ">>> Using locally built binary: $releaseExe" -ForegroundColor Cyan
+    Install-InstalledBinary $releaseExe
 } else {
     # Check if Krebs.exe is directly present in current folder (e.g. from release zip)
     $localExe = Join-Path $baseDir "Krebs.exe"
     if (Test-Path $localExe) {
-        Copy-Item -Force $localExe $destExe
+        Write-Host ">>> Using bundled binary: $localExe" -ForegroundColor Cyan
+        Install-InstalledBinary $localExe
     } else {
-        # Attempt to download from GitHub Releases
-        $tag = "v0.1.0"
-        $zipUrl = "https://github.com/ybreakless/Krebs/releases/download/$tag/krebs-$tag-x86_64-pc-windows.zip"
-        $tmpZip = Join-Path $env:TEMP "krebs-release.zip"
-        $tmpExtract = Join-Path $env:TEMP "krebs-extract"
+        # Pick the release channel matching this machine (release.yml builds msvc zips).
+        $arch = $env:PROCESSOR_ARCHITECTURE
+        $target = if ($arch -eq "ARM64") { "aarch64-pc-windows-msvc" } else { "x86_64-pc-windows-msvc" }
+        $tag = Get-LatestReleaseTag
 
-        Write-Host ">>> Fetching latest release package from GitHub..." -ForegroundColor Cyan
+        $installed = $false
         try {
-            Invoke-WebRequest -Uri $zipUrl -OutFile $tmpZip -UseBasicParsing
-            Expand-Archive -Path $tmpZip -DestinationPath $tmpExtract -Force
-            $foundExe = Get-ChildItem -Path $tmpExtract -Recurse -Filter "Krebs.exe" | Select-Object -First 1
-            if ($foundExe) {
-                Copy-Item -Force $foundExe.FullName $destExe
-                # Also copy bundled dlls if any
-                Get-ChildItem -Path $foundExe.DirectoryName -Filter "*.dll" | ForEach-Object {
-                    Copy-Item -Force $_.FullName (Join-Path $installDir $_.Name)
-                }
-            }
-            Remove-Item -Force $tmpZip -ErrorAction SilentlyContinue
-            Remove-Item -Recurse -Force $tmpExtract -ErrorAction SilentlyContinue
+            Install-FromReleaseArchive -Tag $tag -Target $target
+            Write-Host "[OK] Downloaded and installed release binary ($tag, $target)." -ForegroundColor Green
+            $installed = $true
         } catch {
-            Write-Host "Downloading release binary failed. Attempting cargo build..." -ForegroundColor Yellow
-            if (Get-Command "cargo" -ErrorAction SilentlyContinue) {
-                cargo build --release
-                Copy-Item -Force $releaseExe $destExe
-            } else {
-                throw "Could not acquire Krebs binary. Please ensure network access or install Rust (https://rustup.rs)."
+            Write-Host "Release download failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+
+        if (-not $installed) {
+            $cargo = Get-CargoHome
+            if ($null -eq $cargo) {
+                throw @"
+Neither release download nor compilation is possible.
+  - No release archive reachable for $tag ($target).
+  - Rust/Cargo is not installed (required to build from source).
+Install Rust from https://rustup.rs and re-run, or download a zip directly from:
+  $repoUrl/releases
+"@
             }
+            Install-FromSource
         }
     }
+}
+
+if (-not (Test-Path $destExe)) {
+    throw "Internal error: $destExe was not installed."
 }
 
 $exeSize = (Get-Item $destExe).Length
 Write-Host "[OK] Installed executable: $destExe ($exeSize bytes)" -ForegroundColor Green
 
-# 2. Bundle Essential Runtime DLLs (libunwind.dll, libc++.dll, libwinpthread-1.dll)
-$llvmBin = "C:\Users\arion\AppData\Local\Microsoft\WinGet\Packages\MartinStorsjo.LLVM-MinGW.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\llvm-mingw-20261020-ucrt-x86_64\bin"
-$dllNames = @("libunwind.dll", "libc++.dll", "libwinpthread-1.dll")
-$releaseDir = Split-Path -Parent $releaseExe
-
-foreach ($dll in $dllNames) {
-    $srcDll = Join-Path $releaseDir $dll
-    if (-not (Test-Path $srcDll)) {
-        $srcDll = Join-Path $baseDir $dll
-    }
-    if ((-not (Test-Path $srcDll)) -and (Test-Path $llvmBin)) {
-        $srcDll = Join-Path $llvmBin $dll
-    }
-    if (Test-Path $srcDll) {
-        Copy-Item -Force $srcDll (Join-Path $installDir $dll)
-        Write-Host "[OK] Bundled runtime dependency: $dll" -ForegroundColor Green
-    }
-}
-
-# 3. Copy Icon
+# 2. Copy Icon
 $icoSource = Join-Path $baseDir "krebs_icon.ico"
 $destIco = Join-Path $installDir "Krebs.ico"
 if (Test-Path $icoSource) {
@@ -98,7 +189,7 @@ if (Test-Path $icoSource) {
     Write-Host "[OK] Installed application icon: $destIco" -ForegroundColor Green
 }
 
-# 4. Terminal Pathway Setup: 'krabbe' command
+# 3. Terminal Pathway Setup: 'krabbe' command
 $krabbeExe = Join-Path $installDir "krabbe.exe"
 Copy-Item -Force $destExe $krabbeExe
 Write-Host "[OK] Created terminal executable: $krabbeExe" -ForegroundColor Green
@@ -113,7 +204,7 @@ $shScript = "#!/bin/sh`nDIR=`"`$(cd `"`$(dirname `"`$0`")`" && pwd)`"`nexec `"`$
 [System.IO.File]::WriteAllText($krabbeSh, $shScript)
 Write-Host "[OK] Created bash terminal wrapper: $krabbeSh" -ForegroundColor Green
 
-# 5. Add $installDir to User PATH Environment Variable
+# 4. Add $installDir to User PATH Environment Variable
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if ($null -eq $userPath) { $userPath = "" }
 if ($userPath -notlike "*$installDir*") {
@@ -126,7 +217,7 @@ if ($env:Path -notlike "*$installDir*") {
     $env:Path = "$installDir;" + $env:Path
 }
 
-# 6. Create Default config.toml if missing
+# 5. Create Default config.toml if missing
 $configPath = Join-Path $dataDir "config.toml"
 if (-not (Test-Path $configPath)) {
     $cfg = @(
@@ -164,7 +255,7 @@ if (-not (Test-Path $configPath)) {
     Write-Host "[OK] Initialized default config.toml" -ForegroundColor Green
 }
 
-# 7. Create Default snippets_de.toml if missing
+# 6. Create Default snippets_de.toml if missing
 $snippetsPath = Join-Path $dataDir "snippets_de.toml"
 if (-not (Test-Path $snippetsPath)) {
     $snip = @(
@@ -204,7 +295,7 @@ if (-not (Test-Path $snippetsPath)) {
     Write-Host "[OK] Initialized default snippets_de.toml" -ForegroundColor Green
 }
 
-# 8. Create Windows Start Menu Shortcut
+# 7. Create Windows Start Menu Shortcut
 $wsh = New-Object -ComObject WScript.Shell
 $startMenuDir = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs"
 $startMenuShortcut = Join-Path $startMenuDir "Krebs.lnk"
@@ -216,7 +307,7 @@ $shortcut.Description = "Krebs Studio: Minimalist Writing & Whiteboard"
 $shortcut.Save()
 Write-Host "[OK] Added to Windows Start Menu / Application List: $startMenuShortcut" -ForegroundColor Green
 
-# 9. Create Desktop Shortcut
+# 8. Create Desktop Shortcut
 $desktopDir = [System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::Desktop)
 $desktopShortcut = Join-Path $desktopDir "Krebs.lnk"
 $shortcutDesktop = $wsh.CreateShortcut($desktopShortcut)
@@ -227,8 +318,10 @@ $shortcutDesktop.Description = "Krebs Studio: Minimalist Writing & Whiteboard"
 $shortcutDesktop.Save()
 Write-Host "[OK] Added Desktop Shortcut: $desktopShortcut" -ForegroundColor Green
 
+$pipelineStart.Stop()
+
 Write-Host ""
-Write-Host ">>> Krebs Studio installation complete!" -ForegroundColor Cyan
+Write-Host ">>> Krebs Studio installation complete in $([int]$pipelineStart.Elapsed.TotalSeconds) seconds!" -ForegroundColor Cyan
 Write-Host "Terminal Pathway:" -ForegroundColor Yellow
 Write-Host "  Launch from any terminal (PowerShell, CMD, Bash) using:" -ForegroundColor White
 Write-Host "      krabbe" -ForegroundColor Green
