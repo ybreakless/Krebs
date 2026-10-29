@@ -47,6 +47,17 @@ Repository: `ybreakless/Krebs` · Release target: **v1.0.0** (from `0.1.0`)
 - [x] Paginated PDF: margins, headers, page numbers, UTF-8 (Latin/CJK/Arabic script support)
 - [x] Unified export modal: PDF / Markdown / HTML options
 
+## Phase 5b — Multi-Platform Release & Download Channels (`feat/multiplatform-release-ci`)
+
+- [x] Windows installer (Inno Setup, per-user `%LOCALAPPDATA%\Programs\Krebs`) + portable zips for x64/x86/ARM64
+- [x] macOS universal `.dmg` + `.app` zip verification in the release pipeline
+- [x] Linux AppImage (linuxdeploy, auto-bundled libraries) for every distribution
+- [x] Linux Flatpak: real single-file `.flatpak` bundle built in CI + manifest for Flathub (runtime 24.08, network-enabled cargo build)
+- [x] Linux deb/rpm/pacman tarball pipeline (cargo-deb / generate-rpm) kept green
+- [x] AUR packages `krebs` (source) & `krebs-bin` (prebuilt) with `.SRCINFO`, published from CI via optional `AUR_SSH_PRIVATE_KEY` secret, shipped as artifacts otherwise
+- [x] GitHub Release publishes everything with SHA256SUMS and per-channel install instructions
+- [x] Auto-detecting download page (`docs/download.html`) + GitHub Pages deployment workflow
+
 ## Phase 6 — Prompt Studio, AI Workbench & MCP Hub (`feat/prompt-studio-mcp`)
 
 - [ ] Visual prompt builder: persona, task/objectives, context/constraints, output format, live token & char counter

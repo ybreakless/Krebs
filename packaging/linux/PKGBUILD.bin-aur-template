@@ -1,0 +1,35 @@
+# Maintainer: ybreakless <194576839+ybreakless@users.noreply.github.com>
+# Prebuilt binary package: installs the krebs binary from the official
+# GitHub release tarball. CI updates pkgver + sha256sums on every release.
+pkgname=krebs-bin
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Minimalist Writing & Infinite Whiteboard Studio in Pure Rust (prebuilt)"
+arch=('x86_64')
+url="https://github.com/ybreakless/Krebs"
+license=('MIT')
+depends=(
+    'fontconfig'
+    'libx11'
+    'libxcursor'
+    'libxrandr'
+    'libxi'
+    'libxinerama'
+    'libxkbcommon'
+    'mesa'
+    'wayland'
+)
+provides=('krebs')
+conflicts=('krebs')
+source=("krebs-v$pkgver-x86_64.tar.gz::https://github.com/ybreakless/Krebs/releases/download/v$pkgver/krebs-v$pkgver-x86_64-unknown-linux-gnu.tar.gz")
+sha256sums=('0000000000000000000000000000000000000000000000000000000000000000')
+
+package() {
+    local srcroot="$srcdir/krebs-v$pkgver-x86_64-unknown-linux-gnu"
+    install -Dm644 "$srcroot/logo.png" "$pkgdir/usr/share/icons/hicolor/512x512/apps/krebs.png"
+    install -Dm755 "$srcroot/krebs" "$pkgdir/usr/bin/krebs"
+    install -Dm755 "$srcroot/krabbe" "$pkgdir/usr/bin/krabbe"
+    install -Dm644 "$srcroot/krebs.desktop" "$pkgdir/usr/share/applications/krebs.desktop"
+    install -Dm644 "$srcroot/README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
+    install -Dm644 "$srcroot/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
