@@ -42,10 +42,10 @@ Repository: `ybreakless/Krebs` · Release target: **v1.0.0** (from `0.1.0`)
 
 ## Phase 5 — Export PDF / Markdown / HTML (`feat/export-pdf-markdown`)
 
-- [ ] Markdown export with optional YAML frontmatter (title, date, word count, language)
-- [ ] Copy-Markdown to clipboard + save dialog via `rfd`
-- [ ] Paginated PDF: margins, headers, page numbers, UTF-8 (Latin/CJK/Arabic script support)
-- [ ] Unified export modal: PDF / Markdown / HTML options
+- [x] Markdown export with optional YAML frontmatter (title, date, word count, language)
+- [x] Copy-Markdown to clipboard + save dialog via `rfd`
+- [x] Paginated PDF: margins, headers, page numbers, UTF-8 (Latin/CJK/Arabic script support)
+- [x] Unified export modal: PDF / Markdown / HTML options
 
 ## Phase 6 — Prompt Studio, AI Workbench & MCP Hub (`feat/prompt-studio-mcp`)
 

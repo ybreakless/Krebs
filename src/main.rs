@@ -341,6 +341,7 @@ struct Krebs {
     accent_choice: AccentChoice,
     show_theme_modal: bool,
     show_lang_modal: bool,
+    show_export_modal: bool,
     show_tour_modal: bool,
     tour_step: usize,
     is_maximized: bool,
@@ -355,13 +356,24 @@ pub enum RightDrawerTab {
     Redemittel,
 }
 
+/// The export formats offered by the unified export modal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExportFormat {
+    /// Paginated PDF rendered with genpdf.
+    Pdf,
+    /// Markdown file with YAML front matter.
+    Markdown,
+    /// Print-ready HTML document.
+    Html,
+}
+
 #[derive(Debug, Clone)]
 enum Message {
     EditorAction(text_editor::Action),
     Sidebar(SidebarAction),
     FileOpened(Option<PathBuf>),
     FileSaved(Option<PathBuf>),
-    FileExported(Option<PathBuf>),
+    FileExported(Option<PathBuf>, ExportFormat),
     FileDropped(PathBuf),
     Tick,
     KeyboardEvent(Key, Modifiers),
@@ -396,6 +408,12 @@ enum Message {
     ToggleLangModal,
     CloseLangModal,
     SelectLanguage(i18n::Lang),
+    ToggleExportModal,
+    CloseExportModal,
+    ExportPdf,
+    ExportMarkdown,
+    ExportHtml,
+    CopyMarkdown,
     ToggleTourModal,
     CloseTourModal,
     TourNext,
@@ -531,6 +549,7 @@ impl Krebs {
             accent_choice,
             show_theme_modal: false,
             show_lang_modal: false,
+            show_export_modal: false,
             show_tour_modal,
             tour_step: 0,
             is_maximized: false,
@@ -852,6 +871,70 @@ impl Krebs {
                 Task::none()
             }
 
+            Message::ToggleExportModal => {
+                self.show_export_modal = !self.show_export_modal;
+                Task::none()
+            }
+
+            Message::CloseExportModal => {
+                self.show_export_modal = false;
+                Task::none()
+            }
+
+            Message::ExportPdf => {
+                self.show_export_modal = false;
+                Task::perform(
+                    async {
+                        rfd::FileDialog::new()
+                            .add_filter("PDF Document", &["pdf"])
+                            .set_file_name("document.pdf")
+                            .save_file()
+                    },
+                    |p| Message::FileExported(p, ExportFormat::Pdf),
+                )
+            }
+
+            Message::ExportMarkdown => {
+                self.show_export_modal = false;
+                Task::perform(
+                    async {
+                        rfd::FileDialog::new()
+                            .add_filter("Markdown (*.md)", &["md"])
+                            .set_file_name("document.md")
+                            .save_file()
+                    },
+                    |p| Message::FileExported(p, ExportFormat::Markdown),
+                )
+            }
+
+            Message::ExportHtml => {
+                self.show_export_modal = false;
+                Task::perform(
+                    async {
+                        rfd::FileDialog::new()
+                            .add_filter("HTML Document", &["html", "htm"])
+                            .set_file_name("document.html")
+                            .save_file()
+                    },
+                    |p| Message::FileExported(p, ExportFormat::Html),
+                )
+            }
+
+            Message::CopyMarkdown => {
+                let text = self.content.text();
+                match export::copy_markdown_to_clipboard(&text) {
+                    Ok(()) => {
+                        let lang = self.lang();
+                        self.notify(i18n::t(lang, i18n::Key::MarkdownCopied));
+                    }
+                    Err(_) => {
+                        let lang = self.lang();
+                        self.notify(i18n::t(lang, i18n::Key::ExportFailed));
+                    }
+                }
+                Task::none()
+            }
+
             Message::ToggleTourModal => {
                 self.show_tour_modal = !self.show_tour_modal;
                 self.tour_step = 0;
@@ -1140,17 +1223,46 @@ impl Krebs {
                 Task::none()
             }
 
-            Message::FileExported(path_opt) => {
+            Message::FileExported(path_opt, format) => {
                 if let Some(path) = path_opt {
                     let text = self.content.text();
                     let title = path
                         .file_stem()
                         .map(|s| s.to_string_lossy().to_string())
                         .unwrap_or_else(|| "Krebs Export".to_string());
+                    let lang = self.lang();
 
-                    if export::export_to_file(&text, &title, &path).is_ok() {
-                        let _ = export::open_exported_html(&path);
-                        self.notify("Exported and opened in browser");
+                    let result = match format {
+                        ExportFormat::Pdf => export::export_pdf(
+                            &text,
+                            &title,
+                            &path,
+                            i18n::t(lang, i18n::Key::PageLabel),
+                        ),
+                        ExportFormat::Markdown => export::export_markdown_to_file(
+                            &text,
+                            &title,
+                            &self.config.language,
+                            &path,
+                        )
+                        .map_err(|e| e.to_string()),
+                        ExportFormat::Html => {
+                            export::export_to_file(&text, &title, &path).map_err(|e| e.to_string())
+                        }
+                    };
+
+                    match result {
+                        Ok(()) => {
+                            if format != ExportFormat::Markdown {
+                                if let Err(e) = export::open_exported_html(&path) {
+                                    self.notify(e);
+                                }
+                            }
+                            self.notify(i18n::t(lang, i18n::Key::Exported));
+                        }
+                        Err(_) => {
+                            self.notify(i18n::t(lang, i18n::Key::ExportFailed));
+                        }
                     }
                 }
                 Task::none()
@@ -1360,15 +1472,10 @@ impl Krebs {
                 }
             }
 
-            SidebarAction::ExportHtml => Task::perform(
-                async {
-                    rfd::FileDialog::new()
-                        .add_filter("HTML Document", &["html", "htm"])
-                        .set_file_name("document.html")
-                        .save_file()
-                },
-                Message::FileExported,
-            ),
+            SidebarAction::ExportHtml => {
+                self.show_export_modal = !self.show_export_modal;
+                Task::none()
+            }
 
             SidebarAction::ToggleLeftRail => {
                 self.config.show_left_rail = !self.config.show_left_rail;
@@ -1546,7 +1653,7 @@ impl Krebs {
                     return self.handle_sidebar_action(SidebarAction::SaveFile);
                 }
                 Key::Character(ref s) if s.eq_ignore_ascii_case("p") => {
-                    return self.handle_sidebar_action(SidebarAction::ExportHtml);
+                    return self.update(Message::ToggleExportModal);
                 }
                 Key::Character(ref s) if s.eq_ignore_ascii_case("h") => {
                     return self.update(Message::ToggleTopToolbar);
@@ -1673,6 +1780,10 @@ impl Krebs {
             }
             if self.show_lang_modal {
                 self.show_lang_modal = false;
+                return Task::none();
+            }
+            if self.show_export_modal {
+                self.show_export_modal = false;
                 return Task::none();
             }
             if self.search.is_open {
@@ -1888,6 +1999,21 @@ impl Krebs {
         if self.show_lang_modal {
             root_stack = root_stack.push(
                 container(self.view_lang_modal())
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .center(Length::Fill)
+                    .style(|_t| container::Style {
+                        background: Some(iced::Background::Color(Color::from_rgba(
+                            0.0, 0.0, 0.0, 0.65,
+                        ))),
+                        ..Default::default()
+                    }),
+            );
+        }
+
+        if self.show_export_modal {
+            root_stack = root_stack.push(
+                container(self.view_export_modal())
                     .width(Length::Fill)
                     .height(Length::Fill)
                     .center(Length::Fill)
@@ -4002,6 +4128,89 @@ impl Krebs {
 
         container(modal_col)
             .width(380)
+            .padding(18)
+            .style(modal_container_style)
+            .into()
+    }
+
+    /// Unified export modal: PDF, Markdown and HTML in one place.
+    fn view_export_modal<'a>(&self) -> Element<'a, Message> {
+        let lang = self.lang();
+        let rtl = self.is_rtl();
+
+        let title_text = i18n::t(lang, i18n::Key::ExportTitle);
+        let close_btn = button(center(render_svg_icon(SVG_CLOSE, 12, TEXT_MUTED)))
+            .on_press(Message::CloseExportModal)
+            .style(rail_button_style)
+            .width(28)
+            .height(28);
+
+        // Mirrored header for right-to-left languages: close button on the left.
+        let title_row: Element<'a, Message> = if rtl {
+            row![
+                close_btn,
+                Space::with_width(Length::Fill),
+                text(title_text).size(15).color(ACCENT_CYAN)
+            ]
+            .align_y(Alignment::Center)
+            .into()
+        } else {
+            row![
+                text(title_text).size(15).color(ACCENT_CYAN),
+                Space::with_width(Length::Fill),
+                close_btn
+            ]
+            .align_y(Alignment::Center)
+            .into()
+        };
+
+        let entries: [(&str, &'static str, Message); 4] = [
+            (
+                "📄",
+                i18n::t(lang, i18n::Key::ExportPdf),
+                Message::ExportPdf,
+            ),
+            (
+                "📝",
+                i18n::t(lang, i18n::Key::ExportMarkdown),
+                Message::ExportMarkdown,
+            ),
+            (
+                "🌐",
+                i18n::t(lang, i18n::Key::ExportHtml),
+                Message::ExportHtml,
+            ),
+            (
+                "📋",
+                i18n::t(lang, i18n::Key::CopyMarkdown),
+                Message::CopyMarkdown,
+            ),
+        ];
+        let mut actions = column![].spacing(6);
+        for (icon, label, msg) in entries {
+            let btn = button(
+                row![
+                    text(icon).size(14),
+                    text(label).size(13).color(TEXT_PRIMARY)
+                ]
+                .spacing(10)
+                .align_y(Alignment::Center),
+            )
+            .on_press(msg)
+            .style(rail_button_style)
+            .padding(9)
+            .width(Length::Fill);
+            actions = actions.push(btn);
+        }
+
+        let hint = text(i18n::t(lang, i18n::Key::ExportHint))
+            .size(11)
+            .color(TEXT_MUTED);
+
+        let modal_col = column![title_row, create_divider_simple(), actions, hint].spacing(12);
+
+        container(modal_col)
+            .width(420)
             .padding(18)
             .style(modal_container_style)
             .into()
