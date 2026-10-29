@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version tag (e.g. v0.1.0)'
+        description: 'Release version tag (e.g. v1.0.0)'
         required: false
-        default: 'v0.1.0'
+        default: 'v1.0.0'
 
 permissions:
   contents: write
@@ -47,7 +47,9 @@ jobs:
             libssl-dev \
             pkg-config \
             rpm \
-            zstd
+            zstd \
+            squashfs-tools \
+            zip
 
       - name: Install Packaging Tools (cargo-binstall, cargo-deb, cargo-generate-rpm)
         run: |
@@ -144,6 +146,67 @@ jobs:
           cp LICENSE "$TAR_DIR/"
           tar -czvf "dist/krebs-v${VERSION}-x86_64-unknown-linux-gnu.tar.gz" "$TAR_DIR"
 
+      - name: Build Linux AppImage
+        run: |
+          VERSION="${{ steps.ver.outputs.VERSION }}"
+          APPDIR="AppDir"
+          mkdir -p "$APPDIR/usr/bin" \
+                   "$APPDIR/usr/share/applications" \
+                   "$APPDIR/usr/share/icons/hicolor/512x512/apps"
+
+          cp target/x86_64-unknown-linux-gnu/release/krebs "$APPDIR/usr/bin/krebs"
+          cp packaging/linux/krabbe "$APPDIR/usr/bin/krabbe"
+          chmod +x "$APPDIR/usr/bin/krabbe"
+          cp packaging/linux/krebs.desktop "$APPDIR/usr/share/applications/krebs.desktop"
+          cp assets/logo.png "$APPDIR/usr/share/icons/hicolor/512x512/apps/krebs.png"
+          mkdir -p "$APPDIR/usr/share/licenses"
+          cp LICENSE "$APPDIR/usr/share/licenses/krebs.txt"
+
+          curl -L --proto '=https' --tlsv1.2 -o linuxdeploy-x86_64.AppImage \
+            https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          chmod +x linuxdeploy-x86_64.AppImage
+
+          # VERSION is consumed by linuxdeploy to name the produced AppImage.
+          export VERSION="$VERSION"
+          ./linuxdeploy-x86_64.AppImage --appimage-extract-and-run \
+            --appdir "$APPDIR" \
+            --desktop-file "$APPDIR/usr/share/applications/krebs.desktop" \
+            --icon-file "$APPDIR/usr/share/icons/hicolor/512x512/apps/krebs.png" \
+            --output appimage
+
+          OUTPUT_NAME=$(find . -maxdepth 1 -name '*.AppImage' ! -name 'linuxdeploy*' | head -n1)
+          mv "$OUTPUT_NAME" "dist/krebs-v${VERSION}-x86_64.AppImage"
+
+      - name: Pin Flatpak Manifest to Release Tag
+        run: |
+          VERSION="${{ steps.ver.outputs.VERSION }}"
+          TAG="v${VERSION}"
+          # On a tag push the tag exists on the remote: pin the manifest to it
+          # so the bundle is reproducible. For workflow_dispatch runs before the
+          # tag exists remotely, fall back to the default branch (main).
+          if git ls-remote --tags --exit-code origin "refs/tags/${TAG}"; then
+            sed "s/branch: main/tag: ${TAG}/" \
+              packaging/linux/flatpak/org.ybreakless.krebs.yml > flatpak-manifest.yml
+          else
+            cp packaging/linux/flatpak/org.ybreakless.krebs.yml flatpak-manifest.yml
+          fi
+          cat flatpak-manifest.yml
+
+      - name: Install Flatpak Tooling
+        run: |
+          sudo apt-get install -y flatpak flatpak-builder
+          flatpak remote-add --user --if-not-exists flathub \
+            https://dl.flathub.org/repo/flathub.repo
+
+      - name: Build Flatpak Bundle
+        run: |
+          VERSION="${{ steps.ver.outputs.VERSION }}"
+          flatpak-builder --user --install-deps-from=flathub --force-clean \
+            --default-branch=stable --repo=flatpak-repo \
+            --state-dir=.flatpak-builder-state build/flatpak flatpak-manifest.yml
+          flatpak build-bundle --runtime-repo=https://flathub.org/repo/flathub.repo \
+            flatpak-repo "dist/krebs-v${VERSION}-linux.flatpak" org.ybreakless.krebs stable
+
       - name: Package Flatpak Manifest & Metadata
         run: |
           mkdir -p dist
@@ -213,11 +276,22 @@ jobs:
 
           Compress-Archive -Path "$pkgDir\*" -DestinationPath "dist\krebs-v$ver-$target.zip" -Force
 
+      - name: Build Windows Installer (Inno Setup, x64)
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.ver.outputs.VERSION }}"
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { throw "ISCC.exe not found at $iscc" }
+          New-Item -ItemType Directory -Force -Path "dist" | Out-Null
+          & $iscc "/DAppVersion=$ver" "packaging\windows\installer.iss"
+          Get-ChildItem dist | Format-Table Name, Length
+
       - name: Upload Windows Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: windows-${{ matrix.target }}
-          path: dist/*.zip
+          path: dist/*
 
   # -------------------------------------------------------------
   # 3. macOS Packaging (Intel, Apple Silicon, Universal .app & .dmg)
@@ -321,6 +395,131 @@ jobs:
           path: dist/*
 
   # -------------------------------------------------------------
+  # 3b. AUR (Arch User Repository): version-bump PKGBUILDs, verify
+  #     checksums against the built tarball, optionally publish to
+  #     aur.archlinux.org when the AUR_SSH_PRIVATE_KEY secret is set.
+  # -------------------------------------------------------------
+  build-aur:
+    name: AUR Packages (krebs, krebs-bin)
+    runs-on: ubuntu-latest
+    needs: build-linux
+    env:
+      AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Linux Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-packages
+          path: linux-artifacts
+
+      - name: Determine Version & Checksum
+        id: aur
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          if [ -z "$VERSION" ]; then
+            VERSION="${GITHUB_REF_NAME}"
+          fi
+          VERSION="${VERSION#v}"
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+          TARBALL="linux-artifacts/krebs-v${VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+          test -f "$TARBALL" || { ls -la linux-artifacts; exit 1; }
+          SHA=$(sha256sum "$TARBALL" | cut -d' ' -f1)
+          echo "SHA=$SHA" >> $GITHUB_OUTPUT
+
+      - name: Prepare AUR Working Trees
+        run: |
+          VERSION="${{ steps.aur.outputs.VERSION }}"
+          SHA="${{ steps.aur.outputs.SHA }}"
+
+          # --- krebs (builds from the versioned tarball) ---------------------
+          mkdir -p aur
+          cp packaging/linux/PKGBUILD aur/PKGBUILD
+          sed -i "s/^pkgver=.*/pkgver=${VERSION}/" aur/PKGBUILD
+          cat > aur/.SRCINFO <<EOF
+          pkgbase = krebs
+          pkgname = krebs
+          pkgver = ${VERSION}
+          pkgrel = 1
+          pkgdesc = Minimalist Writing & Infinite Whiteboard Studio in Pure Rust
+          url = https://github.com/ybreakless/Krebs
+          arch = x86_64
+          license = MIT
+          depends = fontconfig
+          depends = libx11
+          depends = libxcursor
+          depends = libxrandr
+          depends = libxi
+          depends = libxinerama
+          depends = libxkbcommon
+          depends = mesa
+          depends = wayland
+          makedepends = cargo
+          makedepends = rust
+          source = krebs-${VERSION}.tar.gz::https://github.com/ybreakless/Krebs/archive/refs/tags/v${VERSION}.tar.gz
+          sha256sums = SKIP
+          EOF
+
+          # --- krebs-bin (installs the prebuilt release tarball) -------------
+          mkdir -p aur-bin
+          cp packaging/linux/PKGBUILD.bin-aur-template aur-bin/PKGBUILD
+          cp packaging/linux/.SRCINFO.bin-aur-template aur-bin/.SRCINFO
+          sed -i "s/^pkgver=.*$/pkgver=${VERSION}/" aur-bin/PKGBUILD
+          sed -i -E \
+            -e "s/krebs-v1\.0\.0-x86_64\.tar\.gz/krebs-v${VERSION}-x86_64.tar.gz/" \
+            -e "s/krebs-v1\.0\.0-x86_64-unknown-linux-gnu\.tar\.gz/krebs-v${VERSION}-x86_64-unknown-linux-gnu.tar.gz/" \
+            aur-bin/PKGBUILD
+          sed -i \
+            -e "s/^pkgver = .*/pkgver = ${VERSION}/" \
+            -e "s/^sha256sums = .*/sha256sums = ${SHA}/" \
+            -e "s/krebs-v1\.0\.0-x86_64\.tar\.gz/krebs-v${VERSION}-x86_64.tar.gz/" \
+            -e "s/krebs-v1\.0\.0-x86_64-unknown-linux-gnu\.tar\.gz/krebs-v${VERSION}-x86_64-unknown-linux-gnu.tar.gz/" \
+            aur-bin/.SRCINFO
+          sed -i "s/^sha256sums=.*/sha256sums=('${SHA}')/" aur-bin/PKGBUILD
+
+          echo "----- aur/PKGBUILD -----";     grep -E "^(pkgver|source|sha256)" aur/PKGBUILD
+          echo "----- aur-bin/PKGBUILD -----"; grep -E "^(pkgver|source|sha256)" aur-bin/PKGBUILD
+          echo "----- aur-bin/.SRCINFO -----"; grep -E "^(pkgver|source|sha256)" aur-bin/.SRCINFO
+
+      - name: Publish to AUR
+        if: env.AUR_SSH_PRIVATE_KEY != ''
+        continue-on-error: true
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/aur_key
+          chmod 600 ~/.ssh/aur_key
+          ssh-keyscan -H aur.archlinux.org 2>/dev/null >> ~/.ssh/known_hosts
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/aur_key -o IdentitiesOnly=yes"
+
+          git config --global user.name "krebs-release-bot"
+          git config --global user.email "krebs-release-bot@users.noreply.github.com"
+
+          git clone "ssh://aur@aur.archlinux.org/krebs-bin.git" aurbin-push
+          cp aur-bin/PKGBUILD aur-bin/.SRCINFO aurbin-push/
+          git -C aurbin-push add .
+          git -C aurbin-push diff --cached --quiet || git -C aurbin-push commit -m "Update to v${{ steps.aur.outputs.VERSION }}"
+          git -C aurbin-push push
+
+          git clone "ssh://aur@aur.archlinux.org/krebs.git" aurpush
+          cp aur/PKGBUILD aur/.SRCINFO aurpush/
+          git -C aurpush add .
+          git -C aurpush diff --cached --quiet || git -C aurpush commit -m "Update to v${{ steps.aur.outputs.VERSION }}"
+          git -C aurpush push
+
+      - name: Upload AUR Package Files
+        uses: actions/upload-artifact@v4
+        with:
+          name: aur-packages
+          path: |
+            aur/PKGBUILD
+            aur/.SRCINFO
+            aur-bin/PKGBUILD
+            aur-bin/.SRCINFO
+
+  # -------------------------------------------------------------
   # 4. GitHub Release Publisher & Checksums
   # -------------------------------------------------------------
   publish-release:
@@ -368,7 +567,7 @@ jobs:
             
             Minimalist, distraction-free writing studio & infinite vector whiteboard in **100% pure Rust**.
             
-            ---
+            --- 
             
             ### 📦 Linux Packages
             - **Ubuntu / Debian / Linux Mint (APT):**
@@ -383,6 +582,23 @@ jobs:
               ```bash
               sudo pacman -U ./krebs-*-x86_64.pkg.tar.zst
               ```
+              or install `krebs` / `krebs-bin` from the **AUR**:
+              ```bash
+              yay -S krebs-bin
+              ```
+            - **AppImage (every distribution):**
+              ```bash
+              chmod +x krebs-v*-x86_64.AppImage
+              ./krebs-v*-x86_64.AppImage
+              ```
+            - **Flatpak (single-file bundle):**
+              ```bash
+              flatpak install ./krebs-v*-linux.flatpak
+              ```
+              or build from the shipped manifest:
+              ```bash
+              flatpak-builder build org.ybreakless.krebs.yml
+              ```
             - **Generic Linux Tarball:**
               ```bash
               tar -xzvf krebs-v*-x86_64-unknown-linux-gnu.tar.gz
@@ -392,11 +608,12 @@ jobs:
             ---
             
             ### 🪟 Windows Packages
-            - **Windows x64 (Intel/AMD 64-bit):** `krebs-v*-x86_64-pc-windows-msvc.zip`
-            - **Windows x86 (32-bit):** `krebs-v*-i686-pc-windows-msvc.zip`
-            - **Windows ARM64 (Surface / Snapdragon):** `krebs-v*-aarch64-pc-windows-msvc.zip`
+            - **Installer (x64, no admin rights):** `krebs-v*-x64-setup.exe` — recommended
+            - **Portable x64:** `krebs-v*-x86_64-pc-windows-msvc.zip`
+            - **Portable x86 (32-bit):** `krebs-v*-i686-pc-windows-msvc.zip`
+            - **Portable ARM64 (Surface / Snapdragon):** `krebs-v*-aarch64-pc-windows-msvc.zip`
             
-            *Extract the zip and run `Krebs.exe` directly, or right-click `install.ps1` -> **Run with PowerShell** to install cleanly to Start Menu & Desktop.*
+            *Run the setup wizard, or extract a zip and start `Krebs.exe` directly — your notes and settings live next to the program.*
             
             ---
             
@@ -407,6 +624,8 @@ jobs:
             - **macOS Intel Tarball:** `krebs-v*-x86_64-apple-darwin.tar.gz`
             
             *Drag `Krebs.app` into your `/Applications` folder.*
+            
+            🌐 **Download page (auto-detects your platform):** https://ybreakless.github.io/Krebs/download
             
             ---
             

@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Krebs Studio — Download</title>
+<meta name="description" content="Download Krebs Studio for Windows, macOS and Linux — installer, AppImage, Flatpak, deb, rpm, AUR and more.">
+<link rel="icon" href="https://raw.githubusercontent.com/ybreakless/Krebs/main/assets/logo.svg">
+<style>
+  :root {
+    --bg: #101216;
+    --panel: #171a20;
+    --ink: #e8eaed;
+    --muted: #9aa0a6;
+    --accent: #4cc3d9;
+    --accent-ink: #062b33;
+    --border: #2a2e36;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    line-height: 1.55;
+  }
+  main { max-width: 880px; margin: 0 auto; padding: 48px 20px 80px; }
+  h1 { font-size: 2.1rem; margin: 0 0 8px; }
+  .sub { color: var(--muted); margin: 0 0 32px; }
+  .badges { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 28px; }
+  .badge {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 999px; padding: 4px 14px; font-size: .85rem; color: var(--muted);
+  }
+  .cta {
+    display: block; text-decoration: none; text-align: center;
+    background: var(--accent); color: var(--accent-ink);
+    font-weight: 700; font-size: 1.05rem;
+    padding: 14px 22px; border-radius: 12px; margin-bottom: 10px;
+  }
+  .cta:hover { filter: brightness(1.1); }
+  .cta-note { color: var(--muted); font-size: .9rem; margin-bottom: 36px; }
+  h2 { font-size: 1.15rem; margin: 34px 0 12px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px 16px; text-decoration: none; color: var(--ink);
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .card:hover { border-color: var(--accent); }
+  .card b { color: var(--accent); }
+  .card small { color: var(--muted); }
+  code { background: var(--panel); border: 1px solid var(--border); padding: 1px 6px; border-radius: 6px; font-size: .9em; }
+  pre { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; overflow-x: auto; }
+  .foot { margin-top: 48px; color: var(--muted); font-size: .85rem; border-top: 1px solid var(--border); padding-top: 18px; }
+  .foot a { color: var(--accent); text-decoration: none; }
+  .foot a:hover { text-decoration: underline; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>🦀 Krebs Studio</h1>
+  <p class="sub">Download the latest release — free, minimal, written in 100% pure Rust.</p>
+
+  <div class="badges" id="badges">
+    <span class="badge">Latest release: <b id="tag">…</b></span>
+    <span class="badge" id="platform-badge"></span>
+  </div>
+
+  <a class="cta" id="cta" href="https://github.com/ybreakless/Krebs/releases/latest">Download latest release</a>
+  <p class="cta-note" id="cta-note">Detecting your platform…</p>
+
+  <h2>All channels</h2>
+  <div class="grid" id="grid"></div>
+
+  <h2>Verify your download</h2>
+  <p>Every release ships a <code>SHA256SUMS.txt</code>:</p>
+  <pre>sha256sum -c SHA256SUMS.txt</pre>
+
+  <div class="foot">
+    Krebs is free software (MIT).
+    <a href="https://github.com/ybreakless/Krebs">Source code</a> ·
+    <a href="https://github.com/ybreakless/Krebs/releases">All releases</a> ·
+    <a href="https://github.com/ybreakless/Krebs/issues">Report a problem</a>
+  </div>
+</main>
+
+<script>
+const REPO = "ybreakless/Krebs";
+
+function apiname(part) { return `https://api.github.com/repos/${REPO}/releases/${part}`; }
+
+function assetUrl(_tag, name) {
+  // Prefer direct "latest" links so we never depend on API rate limits per asset.
+  return `https://github.com/${REPO}/releases/latest/download/${encodeURIComponent(name)}`;
+}
+
+function pick(list, rx) { return list.find(n => rx.test(n)) || null; }
+
+function render(release) {
+  const tag = release.tag_name || "latest";
+  document.getElementById("tag").textContent = tag;
+
+  // ---- asset buckets (matched against release asset filenames) ----
+  const names = release.assets.map(a => a.name);
+  const has = rx => {
+    const n = pick(names, rx);
+    return n ? assetUrl(tag, n) : null;
+  };
+
+  const buckets = [
+    { group: "Windows", icon: "🪟", items: [
+      { label: "Windows x64 — Installer", note: "Recommended · setup wizard, no admin rights", rx: /-setup\.exe$/ },
+      { label: "Windows x64 — Portable ZIP", note: "Run from anywhere", rx: /x86_64-pc-windows-msvc\.zip$/ },
+      { label: "Windows x86 — Portable ZIP", note: "32-bit", rx: /i686-pc-windows-msvc\.zip$/ },
+      { label: "Windows ARM64 — Portable ZIP", note: "Surface / Snapdragon", rx: /aarch64-pc-windows-msvc\.zip$/ },
+    ]},
+    { group: "macOS", icon: "🍏", items: [
+      { label: "macOS — Disk Image (DMG)", note: "Apple Silicon + Intel (universal)", rx: /macos-universal\.dmg$/ },
+      { label: "macOS — App Bundle (ZIP)", note: "Drag to /Applications", rx: /macos-universal\.zip$/ },
+    ]},
+    { group: "Linux", icon: "🐧", items: [
+      { label: "Linux — AppImage", note: "Runs on nearly any distribution", rx: /x86_64\.AppImage$/ },
+      { label: "Linux — Flatpak bundle", note: "Sandboxed · flatpak install ./file", rx: /-linux\.flatpak$/ },
+      { label: "Linux — deb (DEB)", note: "Ubuntu · Debian · Mint", rx: /_amd64\.deb$/ },
+      { label: "Linux — rpm (RPM)", note: "Fedora · RHEL · openSUSE", rx: /x86_64\.rpm$/ },
+      { label: "Linux — Pacman package", note: "Arch · Manjaro", rx: /x86_64\.pkg\.tar\.zst$/ },
+      { label: "Linux — Tarball", note: "Extract and run", rx: /x86_64-unknown-linux-gnu\.tar\.gz$/ },
+    ]},
+    { group: "Extras", icon: "🧰", items: [
+      { label: "AUR — Arch User Repository", note: "yay -S krebs-bin (source: krebs)", direct: "https://github.com/ybreakless/Krebs#readme", staticNote: "aur.archlinux.org" },
+      { label: "SHA256SUMS.txt", note: "Verify checksums", rx: /^SHA256SUMS\.txt$/ },
+      { label: "Flatpak manifest", note: "Build from source for Flathub", rx: /org\.ybreakless\.krebs\.yml$/ },
+    ]},
+  ];
+
+  const grid = document.getElementById("grid");
+  for (const b of buckets) {
+    for (const it of b.items) {
+      const url = it.direct || (it.rx && has(it.rx));
+      if (!url) continue;
+      const card = document.createElement("a");
+      card.className = "card";
+      card.href = url;
+      card.innerHTML = `<span>${b.icon} <b>${it.label}</b> <small>· ${b.group}</small></span><small>${it.note}</small>`;
+      grid.appendChild(card);
+    }
+  }
+
+  // ---- platform detection for the big CTA ----
+  const ua = navigator.userAgent;
+  const isWin = /Windows|Win64|Win32/.test(ua);
+  const isMac = /Macint|Mac OS/.test(ua) && !/iPhone|iPad/.test(ua);
+  const isLinux = !isWin && !isMac && (/Linux|X11|CrOS|Ubuntu|Fedora/.test(ua) || /arm|aarch/.test(ua));
+
+  let cta = null, note = "";
+  const badge = document.getElementById("platform-badge");
+  if (isWin) {
+    cta = has(/-setup\.exe$/) || has(/x86_64-pc-windows-msvc\.zip$/);
+    note = "Detected: Windows x64 — the installer keeps settings next to the program and needs no admin rights.";
+    badge.innerHTML = `Detected platform: Windows`;
+  } else if (isMac) {
+    cta = has(/macos-universal\.dmg$/) || has(/macos-universal\.zip$/);
+    note = "Detected: macOS — the universal DMG runs natively on Apple Silicon and Intel.";
+    badge.innerHTML = `Detected platform: macOS`;
+  } else if (isLinux) {
+    cta = has(/x86_64\.AppImage$/) || has(/-linux\.flatpak$/) || has(/x86_64-unknown-linux-gnu\.tar\.gz$/);
+    note = "Detected: Linux — AppImage below; debs, rpm, Flatpak, pacman and the AUR are listed under All channels.";
+    badge.innerHTML = `Detected platform: Linux`;
+  } else {
+    note = "Platform unknown — choose a package from the list below.";
+  }
+  if (cta) {
+    const el = document.getElementById("cta");
+    el.href = cta;
+    el.textContent = "Download for my device";
+  }
+  document.getElementById("cta-note").textContent = note;
+}
+
+fetch(apiname("latest"))
+  .then(r => { if (!r.ok) throw new Error("api"); return r.json(); })
+  .then(render)
+  .catch(() => {
+    document.getElementById("tag").textContent = "latest";
+    document.getElementById("cta-note").textContent =
+      "Could not load the release list (rate limit or offline) — use the fallback below.";
+    const grid = document.getElementById("grid");
+    const card = document.createElement("a");
+    card.className = "card";
+    card.href = `https://github.com/${REPO}/releases/latest`;
+    card.innerHTML = `<span><b>GitHub Releases</b></span><small>All platform packages</small>`;
+    grid.appendChild(card);
+  });
+</script>
+</body>
+</html>
