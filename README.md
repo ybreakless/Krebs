@@ -149,6 +149,23 @@ Prebuilt releases for every major platform and package manager are available on 
 
 ---
 
+### 5. 🃏 Kartei — The Study Note
+
+Every markdown note can also be a **study note**. Write flashcards while you write prose:
+
+```markdown
+::: karte
+Q: What does "SM-2" describe?
+A: A spaced-repetition algorithm that grows review intervals for cards you remember.
+:::
+```
+
+- **Study overlay (`Ctrl+K` or the stacked-cards rail button):** shows only the cards currently due — reveal the answer, then grade **Again / Good / Easy**.
+- **Spaced repetition (SM-2 lite):** intervals grow from 1 day up to 90 days; "Again" shows the card again in 10 minutes. Progress is saved in `krebs_data/study.json`, keyed by card content — renaming the file never loses your history.
+- **Localized:** study prompts are translated across all 10 UI languages, RTL included.
+
+---
+
 ## ⌨️ Keyboard Shortcuts
 
 | Shortcut | Description |
@@ -162,6 +179,7 @@ Prebuilt releases for every major platform and package manager are available on 
 | `Ctrl + 3` | **Reader View** (Full-width rendered Markdown) |
 | `Ctrl + W` | **Cycle Canvas Width** (Standard ↔ Wide ↔ Full) |
 | `Ctrl + F` | **Toggle In-Document Search Bar** |
+| `Ctrl + K` | **Kartei Study Mode** (spaced-repetition flashcards from the note) |
 | `Ctrl + T` | **Theme Customizer** (Omarchy Dark, OLED Black, Deep Slate, Espresso) |
 | `Ctrl + E` | **Toggle Right Drawer** (AI Coach & German Exam Redemittel) |
 | `Ctrl + \` | **Toggle Left Vertical Tool Rail** |
@@ -190,6 +208,7 @@ Krebs/
 └── krebs_data/
     ├── config.toml            # Window size, themes, AI endpoint, fonts
     ├── snippets_de.toml       # Customizable German B2/C1 Redemittel
+    ├── study.json             # Kartei flashcard schedule (spaced repetition)
     └── recovery/              # Unsaved draft recovery checkpoints
 ```
 

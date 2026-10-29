@@ -8,6 +8,7 @@ pub mod i18n;
 pub mod icons;
 pub mod markdown_view;
 pub mod sidebar;
+pub mod study;
 pub mod theme;
 pub mod whiteboard;
 
@@ -342,6 +343,8 @@ struct Krebs {
     show_theme_modal: bool,
     show_lang_modal: bool,
     show_export_modal: bool,
+    /// Active Kartei review session; `Some` while the study overlay is open.
+    study: Option<study::Review>,
     show_tour_modal: bool,
     tour_step: usize,
     is_maximized: bool,
@@ -414,6 +417,10 @@ enum Message {
     ExportMarkdown,
     ExportHtml,
     CopyMarkdown,
+    ToggleStudyModal,
+    CloseStudyModal,
+    StudyReveal,
+    StudyGrade(study::Grade),
     ToggleTourModal,
     CloseTourModal,
     TourNext,
@@ -550,6 +557,7 @@ impl Krebs {
             show_theme_modal: false,
             show_lang_modal: false,
             show_export_modal: false,
+            study: None,
             show_tour_modal,
             tour_step: 0,
             is_maximized: false,
@@ -930,6 +938,44 @@ impl Krebs {
                     Err(_) => {
                         let lang = self.lang();
                         self.notify(i18n::t(lang, i18n::Key::ExportFailed));
+                    }
+                }
+                Task::none()
+            }
+
+            Message::ToggleStudyModal => {
+                if self.study.is_some() {
+                    self.study = None;
+                } else {
+                    let text = self.content.text();
+                    self.study = Some(study::Review::open(
+                        &text,
+                        study::StudyTable::load(),
+                        study::now_ms(),
+                    ));
+                }
+                Task::none()
+            }
+
+            Message::CloseStudyModal => {
+                self.study = None;
+                Task::none()
+            }
+
+            Message::StudyReveal => {
+                if let Some(review) = &mut self.study {
+                    review.revealed = true;
+                }
+                Task::none()
+            }
+
+            Message::StudyGrade(grade) => {
+                if let Some(review) = &mut self.study {
+                    review.advance(grade, study::now_ms());
+                    let _ = review.table.save();
+                    if review.is_done() {
+                        let lang = self.lang();
+                        self.notify(i18n::t(lang, i18n::Key::StudyDone));
                     }
                 }
                 Task::none()
@@ -1477,6 +1523,8 @@ impl Krebs {
                 Task::none()
             }
 
+            SidebarAction::ToggleStudyModal => self.update(Message::ToggleStudyModal),
+
             SidebarAction::ToggleLeftRail => {
                 self.config.show_left_rail = !self.config.show_left_rail;
                 let _ = self.config.save();
@@ -1664,6 +1712,9 @@ impl Krebs {
                 Key::Character(ref s) if s.eq_ignore_ascii_case("f") => {
                     return self.update(Message::ToggleSearch);
                 }
+                Key::Character(ref s) if s.eq_ignore_ascii_case("k") => {
+                    return self.update(Message::ToggleStudyModal);
+                }
                 Key::Character(ref s) if s.eq_ignore_ascii_case("t") => {
                     return self.update(Message::ToggleThemeModal);
                 }
@@ -1784,6 +1835,10 @@ impl Krebs {
             }
             if self.show_export_modal {
                 self.show_export_modal = false;
+                return Task::none();
+            }
+            if self.study.is_some() {
+                self.study = None;
                 return Task::none();
             }
             if self.search.is_open {
@@ -2014,6 +2069,21 @@ impl Krebs {
         if self.show_export_modal {
             root_stack = root_stack.push(
                 container(self.view_export_modal())
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .center(Length::Fill)
+                    .style(|_t| container::Style {
+                        background: Some(iced::Background::Color(Color::from_rgba(
+                            0.0, 0.0, 0.0, 0.65,
+                        ))),
+                        ..Default::default()
+                    }),
+            );
+        }
+
+        if self.study.is_some() {
+            root_stack = root_stack.push(
+                container(self.view_study_modal())
                     .width(Length::Fill)
                     .height(Length::Fill)
                     .center(Length::Fill)
@@ -4211,6 +4281,147 @@ impl Krebs {
 
         container(modal_col)
             .width(420)
+            .padding(18)
+            .style(modal_container_style)
+            .into()
+    }
+
+    /// Kartei study overlay: review the due flashcards of the current note.
+    fn view_study_modal<'a>(&self) -> Element<'a, Message> {
+        let lang = self.lang();
+        let rtl = self.is_rtl();
+
+        let Some(review) = &self.study else {
+            return column![].into();
+        };
+
+        let title_text = i18n::t(lang, i18n::Key::StudyTitle);
+        let close_btn = button(center(render_svg_icon(SVG_CLOSE, 12, TEXT_MUTED)))
+            .on_press(Message::CloseStudyModal)
+            .style(rail_button_style)
+            .width(28)
+            .height(28);
+
+        // Mirrored header for right-to-left languages: close button on the left.
+        let title_row: Element<'a, Message> = if rtl {
+            row![
+                close_btn,
+                Space::with_width(Length::Fill),
+                text(title_text).size(15).color(ACCENT_CYAN)
+            ]
+            .align_y(Alignment::Center)
+            .into()
+        } else {
+            row![
+                text(title_text).size(15).color(ACCENT_CYAN),
+                Space::with_width(Length::Fill),
+                close_btn
+            ]
+            .align_y(Alignment::Center)
+            .into()
+        };
+
+        let body: Element<'a, Message> = if review.total_in_note == 0 {
+            // The note contains no flashcards yet — explain the syntax.
+            column![
+                text("🃏").size(26),
+                text(i18n::t(lang, i18n::Key::StudyNoCards))
+                    .size(13)
+                    .color(TEXT_PRIMARY),
+                text(i18n::t(lang, i18n::Key::StudyHint))
+                    .size(11)
+                    .color(TEXT_MUTED)
+            ]
+            .spacing(10)
+            .width(Length::Fill)
+            .into()
+        } else if review.is_done() {
+            column![
+                text("🎉").size(26),
+                text(i18n::t(lang, i18n::Key::StudyDone))
+                    .size(13)
+                    .color(TEXT_PRIMARY),
+            ]
+            .spacing(10)
+            .width(Length::Fill)
+            .into()
+        } else {
+            let Some(card) = review.current() else {
+                return column![].into();
+            };
+            let planned = review.planned_count();
+            let step = review.index + 1;
+            let q = card.question.replace('\n', " ");
+            let a = card.answer.replace('\n', " ");
+            let question_block = text(q).size(15).color(TEXT_PRIMARY).width(Length::Fill);
+            let answer_area: Element<'a, Message> = if review.revealed {
+                text(a)
+                    .size(13)
+                    .color(ACCENT_GREEN)
+                    .width(Length::Fill)
+                    .into()
+            } else {
+                button(
+                    text(i18n::t(lang, i18n::Key::StudyShow))
+                        .size(12)
+                        .color(ACCENT_CYAN),
+                )
+                .on_press(Message::StudyReveal)
+                .style(rail_button_style)
+                .padding(9)
+                .width(Length::Shrink)
+                .into()
+            };
+            let grade_row: Element<'a, Message> = if review.revealed {
+                row![
+                    button(
+                        text(i18n::t(lang, i18n::Key::StudyAgain))
+                            .size(12)
+                            .color(ACCENT_RED)
+                    )
+                    .on_press(Message::StudyGrade(study::Grade::Again))
+                    .style(rail_button_style)
+                    .padding(9),
+                    button(
+                        text(i18n::t(lang, i18n::Key::StudyGood))
+                            .size(12)
+                            .color(ACCENT_GREEN)
+                    )
+                    .on_press(Message::StudyGrade(study::Grade::Good))
+                    .style(rail_button_style)
+                    .padding(9),
+                    button(
+                        text(i18n::t(lang, i18n::Key::StudyEasy))
+                            .size(12)
+                            .color(ACCENT_CYAN)
+                    )
+                    .on_press(Message::StudyGrade(study::Grade::Easy))
+                    .style(rail_button_style)
+                    .padding(9),
+                ]
+                .spacing(8)
+                .into()
+            } else {
+                Space::with_height(0).into()
+            };
+            column![
+                text(format!("{step} / {planned}"))
+                    .size(11)
+                    .color(TEXT_MUTED),
+                question_block,
+                create_divider_simple(),
+                answer_area,
+                grade_row
+            ]
+            .spacing(10)
+            .width(Length::Fill)
+            .into()
+        };
+
+        let modal_col = column![title_row, create_divider_simple(), body].spacing(12);
+
+        container(modal_col)
+            .width(480)
             .padding(18)
             .style(modal_container_style)
             .into()

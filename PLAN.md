@@ -58,6 +58,13 @@ Repository: `ybreakless/Krebs` · Release target: **v1.0.0** (from `0.1.0`)
 - [x] GitHub Release publishes everything with SHA256SUMS and per-channel install instructions
 - [x] Auto-detecting download page (`docs/download.html`) + GitHub Pages deployment workflow
 
+## Phase 5c — Kartei Study Note (`feat/study-note-kartei`)
+
+- [x] Flashcard parsing from plain markdown (`::: karte` blocks with `Q:` / `A:` lines) as a first-class mode on any note
+- [x] SM-2-lite scheduler (Again / Good / Easy; 1–90 day intervals, 10-minute re-go) persisted in `krebs_data/study.json`, cards keyed by content hash
+- [x] Study overlay (Ctrl+K + rail button): due-only queue, reveal answer, grade buttons, progress counter, done state, no-card hint with syntax guide
+- [x] Escape handling, 10 new i18n keys translated across all 10 languages, README + shortcuts documentation
+
 ## Phase 6 — Prompt Studio, AI Workbench & MCP Hub (`feat/prompt-studio-mcp`)
 
 - [ ] Visual prompt builder: persona, task/objectives, context/constraints, output format, live token & char counter

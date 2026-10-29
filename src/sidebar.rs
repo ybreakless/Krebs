@@ -23,6 +23,7 @@ pub enum SidebarAction {
     ToggleShortcutsModal,
     ToggleFontModal,
     ToggleSearch,
+    ToggleStudyModal,
     CycleWidthMode,
     CycleViewMode,
     ToggleAppMode,
@@ -345,6 +346,16 @@ pub fn view_left_rail<'a>(
         sidebar_text_button("äö", 11, SidebarAction::ToggleGermanBar, is_german_bar_open),
         i18n::t(lang, i18n::Key::Umlauts),
     );
+    let btn_kartei = with_tooltip(
+        sidebar_icon_button(
+            SVG_CARD,
+            15,
+            TEXT_MUTED,
+            SidebarAction::ToggleStudyModal,
+            false,
+        ),
+        i18n::t(lang, i18n::Key::Study),
+    );
     let btn_ai = with_tooltip(
         sidebar_icon_button(
             SVG_AI,
@@ -395,6 +406,7 @@ pub fn view_left_rail<'a>(
         create_divider(),
         btn_direction,
         btn_german,
+        btn_kartei,
         btn_exam,
         btn_ai,
     ]
