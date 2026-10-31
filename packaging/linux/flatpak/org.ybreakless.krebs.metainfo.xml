@@ -34,6 +34,11 @@
   </provides>
 
   <releases>
+    <release version="0.2.0" date="2026-10-31">
+      <description>
+        <p>New assets & logo, Prompt Studio for building agent briefs, Language Teacher agent, Inter & Lora fonts, adjustable text size, Agent Studio modal with connection testing, and expanded offline AI fallback.</p>
+      </description>
+    </release>
     <release version="0.1.0" date="2026-10-28">
       <description>
         <p>Initial release of Krebs Studio featuring resizable Live Split sections, infinite vector whiteboard with tablet stylus support, multi-agent AI selector, and terminal krabbe launcher.</p>

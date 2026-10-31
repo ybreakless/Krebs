@@ -86,6 +86,27 @@ fn sidebar_icon_button<'a>(
         .height(36)
 }
 
+/// Helper to build a smaller 28x28 flex-centered sidebar tool button with an SVG icon
+fn sidebar_icon_button_small<'a>(
+    svg_bytes: &'static [u8],
+    icon_size: u16,
+    icon_color: Color,
+    action: SidebarAction,
+    is_active: bool,
+) -> button::Button<'a, SidebarAction> {
+    let btn_style = if is_active {
+        rail_button_active_style
+    } else {
+        rail_button_style
+    };
+
+    button(center(render_svg_icon(svg_bytes, icon_size, icon_color)))
+        .on_press(action)
+        .style(btn_style)
+        .width(28)
+        .height(28)
+}
+
 /// Helper to build uniform 36x36 flex-centered sidebar tool button with text
 fn sidebar_text_button<'a>(
     label: &'static str,
@@ -357,9 +378,9 @@ pub fn view_left_rail<'a>(
         i18n::t(lang, i18n::Key::Study),
     );
     let btn_ai = with_tooltip(
-        sidebar_icon_button(
+        sidebar_icon_button_small(
             SVG_AI,
-            16,
+            14,
             if is_ai_drawer_open {
                 ACCENT_CYAN
             } else {

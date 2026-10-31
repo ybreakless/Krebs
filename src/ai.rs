@@ -95,6 +95,10 @@ pub enum AiAction {
     TipsAndFeedback,
     FixGrammar,
     GermanB2C1,
+    /// Prompt Studio: refine an agent brief.
+    PromptImprove,
+    /// Prompt Studio: answer the user's brief directly ("Run in Krebs").
+    Freeform,
 }
 
 impl AiAction {
@@ -104,6 +108,8 @@ impl AiAction {
             Self::TipsAndFeedback => "💡 Writing Tips",
             Self::FixGrammar => "🔍 Grammar & Flow",
             Self::GermanB2C1 => "🇩🇪 German B2/C1",
+            Self::PromptImprove => "🧠 Prompt Engineer",
+            Self::Freeform => "🚀 Freeform",
         }
     }
 
@@ -138,6 +144,16 @@ impl AiAction {
                 'Es liegt auf der Hand, dass...', 'Zusammenfassend lässt sich sagen'). \
                 Show rewritten sentences demonstrating B2/C1 idiomatic style."
             }
+            Self::PromptImprove => {
+                "You are a world-class prompt engineer. \
+                Improve the given agent brief: sharpen the objective, remove contradictions, \
+                add concrete success criteria and guardrails, keep every original intent. \
+                Reply with the improved brief in the same markdown structure — no commentary."
+            }
+            Self::Freeform => {
+                "You are a capable assistant. Follow the user's brief precisely; \
+                if information is missing, state your assumptions before answering."
+            }
         }
     }
 }
@@ -157,6 +173,12 @@ pub struct AiState {
     pub temp_endpoint: String,
     pub temp_model: String,
     pub temp_api_key: String,
+    /// Temperature for generation (0.0 - 2.0)
+    pub temperature: f32,
+    /// Max tokens for response
+    pub max_tokens: u32,
+    /// Custom system prompt override
+    pub custom_system_prompt: String,
 }
 
 impl Default for AiState {
@@ -175,6 +197,9 @@ impl Default for AiState {
             temp_endpoint: "http://localhost:11434/v1".to_string(),
             temp_model: "hermes3".to_string(),
             temp_api_key: String::new(),
+            temperature: 0.6,
+            max_tokens: 2048,
+            custom_system_prompt: String::new(),
         }
     }
 }
@@ -188,6 +213,8 @@ pub fn run_ai_task(
     api_key: String,
     text: String,
     action: AiAction,
+    temperature: f32,
+    max_tokens: u32,
 ) -> (String, bool) {
     if text.trim().is_empty() {
         return (
@@ -197,7 +224,16 @@ pub fn run_ai_task(
         );
     }
 
-    match call_ai_endpoint(provider, &endpoint, &model, &api_key, &text, action) {
+    match call_ai_endpoint(
+        provider,
+        &endpoint,
+        &model,
+        &api_key,
+        action.system_prompt(),
+        &text,
+        temperature,
+        max_tokens,
+    ) {
         Ok(llm_response) => (llm_response, false),
         Err(_err) => {
             // Endpoint offline, missing key, or unreachable -> seamless offline heuristic evaluation
@@ -212,8 +248,10 @@ fn call_ai_endpoint(
     endpoint: &str,
     model: &str,
     api_key: &str,
+    system_prompt: &str,
     text: &str,
-    action: AiAction,
+    temperature: f32,
+    max_tokens: u32,
 ) -> Result<String, String> {
     let clean_endpoint = endpoint.trim_end_matches('/');
 
@@ -227,8 +265,8 @@ fn call_ai_endpoint(
 
         let body = serde_json::json!({
             "model": model,
-            "max_tokens": 2048,
-            "system": action.system_prompt(),
+            "max_tokens": max_tokens,
+            "system": system_prompt,
             "messages": [
                 { "role": "user", "content": text }
             ]
@@ -277,10 +315,11 @@ fn call_ai_endpoint(
     let body = serde_json::json!({
         "model": model,
         "messages": [
-            { "role": "system", "content": action.system_prompt() },
+            { "role": "system", "content": system_prompt },
             { "role": "user", "content": text }
         ],
-        "temperature": 0.6,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
         "stream": false
     });
 
@@ -306,6 +345,210 @@ fn call_ai_endpoint(
     } else {
         Err("Invalid response structure from AI endpoint".to_string())
     }
+}
+
+/// The learner profile the language-teacher agent adapts to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TutorProfile {
+    /// Language being learned, e.g. `German`.
+    pub language: String,
+    /// Target CEFR level, e.g. `B2`.
+    pub level: String,
+    /// What the learner wants to achieve, in their own words.
+    pub goal: String,
+}
+
+impl Default for TutorProfile {
+    fn default() -> Self {
+        Self {
+            language: "German".to_string(),
+            level: "B2".to_string(),
+            goal: String::new(),
+        }
+    }
+}
+
+impl TutorProfile {
+    /// Fills blank fields with sensible defaults so prompts are never empty.
+    #[must_use]
+    pub fn normalized(&self) -> Self {
+        let language = self.language.trim();
+        let level = self.level.trim();
+        let goal = self.goal.trim();
+        Self {
+            language: if language.is_empty() {
+                "German".to_string()
+            } else {
+                language.to_string()
+            },
+            level: if level.is_empty() {
+                "B1".to_string()
+            } else {
+                level.to_string()
+            },
+            goal: if goal.is_empty() {
+                "write clearer, more natural texts and speak with confidence".to_string()
+            } else {
+                goal.to_string()
+            },
+        }
+    }
+
+    /// The visible agent direction and reusable instruction.
+    #[must_use]
+    pub fn instruction(&self) -> String {
+        let p = self.normalized();
+        format!(
+            "# Language Teacher Agent\n\n\
+             ## Role\n\
+             You are a patient, encouraging {language} teacher at {level} level. \
+             You teach through the learner's own writing, never through generic lectures.\n\n\
+             ## Learner\n\
+             - Target language: {language}\n\
+             - Level: {level} (CEFR)\n\
+             - Goal: {goal}\n\n\
+             ## Method\n\
+             1. Read the learner's text and name one thing they already do well.\n\
+             2. Correct only the mistakes that block meaning or match the target level; quote the original line first.\n\
+             3. Explain each correction in one short sentence, then give the natural rewrite.\n\
+             4. Offer 3 phrases or connectors that level up this exact text.\n\
+             5. Finish with one short practice task and a question that keeps the conversation going.\n\n\
+             ## Rules\n\
+             - Reply in {language} for examples and rewrites; use simple English only for grammar explanations if needed.\n\
+             - Never rewrite the whole text for the learner; guide them to fix it.\n\
+             - Keep the answer under 400 words and use markdown headings and bullets.\n\
+             - Adapt difficulty to {level}; stretch the learner without overwhelming them.\n",
+            language = p.language,
+            level = p.level,
+            goal = p.goal,
+        )
+    }
+
+    /// System prompt sent to the connected model.
+    #[must_use]
+    pub fn system_prompt(&self) -> String {
+        format!(
+            "{}\nFollow this brief exactly. If the learner's text is missing or empty, \
+             offer a short level check plus one exercise instead of inventing their writing.",
+            self.instruction()
+        )
+    }
+}
+
+/// Runs the language-teacher agent against the learner's current note.
+/// Falls back to a deterministic offline study plan when no endpoint answers.
+pub fn run_tutor_task(
+    provider: AiProvider,
+    endpoint: String,
+    model: String,
+    api_key: String,
+    profile: TutorProfile,
+    note: String,
+    temperature: f32,
+    max_tokens: u32,
+) -> (String, bool) {
+    let profile = profile.normalized();
+    let note = if note.trim().is_empty() {
+        "(No note shared yet. Give a short plan and one exercise for this learner.)".to_string()
+    } else {
+        note
+    };
+
+    match call_ai_endpoint(
+        provider,
+        &endpoint,
+        &model,
+        &api_key,
+        &profile.system_prompt(),
+        &note,
+        temperature,
+        max_tokens,
+    ) {
+        Ok(response) => (response, false),
+        Err(_) => (evaluate_tutor_offline(&note, &profile), true),
+    }
+}
+
+/// Sends a tiny prompt to verify the configured agent really answers.
+#[must_use]
+pub fn probe_connection(
+    provider: AiProvider,
+    endpoint: String,
+    model: String,
+    api_key: String,
+) -> (bool, String) {
+    let target = if endpoint.trim().is_empty() {
+        provider.default_endpoint().to_string()
+    } else {
+        endpoint
+    };
+    match call_ai_endpoint(
+        provider,
+        &target,
+        &model,
+        &api_key,
+        "You are a connectivity probe. Reply with one short word.",
+        "Reply with: ready",
+        0.0, // Use deterministic temperature for connection test
+        16,
+    ) {
+        Ok(reply) => {
+            let preview: String = reply.trim().chars().take(60).collect();
+            (true, format!("{} · {}", model, preview))
+        }
+        Err(err) => (false, err),
+    }
+}
+
+/// Deterministic offline language-teacher session: no model required.
+#[must_use]
+pub fn evaluate_tutor_offline(draft: &str, profile: &TutorProfile) -> String {
+    let p = profile.normalized();
+    let words: Vec<&str> = draft.split_whitespace().collect();
+    let word_count = words.len();
+    let sentences = draft
+        .split(['.', '!', '?', '؟', '؛'])
+        .filter(|s| !s.trim().is_empty())
+        .count()
+        .max(1);
+    let avg = word_count as f32 / sentences as f32;
+    let long_sentences = draft
+        .split(['.', '!', '?'])
+        .filter(|s| s.split_whitespace().count() > 28)
+        .count();
+
+    format!(
+        "## 🎓 Language Teacher — {language} · {level}\n\n\
+         **Your goal:** {goal}\n\n\
+         ### ✅ What already works\n\
+         - You put {word_count} words on the page — a solid base to work with.\n\
+         - Your text averages {avg:.1} words per sentence, which is {pace}.\n\n\
+         ### 🔧 Focus for this session\n\
+         1. **Read one paragraph aloud.** Mark any sentence you had to restart; that is the sentence to simplify.\n\
+         2. **Shorten long sentences.** {long} sentence(s) run past 28 words — split each into two ideas.\n\
+         3. **Upgrade three words.** Replace your three most repeated nouns or verbs with precise {language} alternatives at {level}.\n\
+         4. **Add two connectors.** Link paragraphs with level-appropriate transitions instead of starting a new thought cold.\n\n\
+         ### 🗣️ Practice task\n\
+         Rewrite the opening paragraph in half the words without losing the main idea. \
+         Then read both versions aloud and keep the one that sounds more natural.\n\n\
+         ### 💬 Teacher questions\n\
+         - What is the single most important sentence in this note, and why?\n\
+         - Which part would a reader find confusing, and how could you say it more plainly?\n\n\
+         *(Offline study plan — connect a local model in Agent Studio for line-by-line corrections.)*",
+        language = p.language,
+        level = p.level,
+        goal = p.goal,
+        word_count = word_count,
+        avg = avg,
+        pace = if (10.0..=22.0).contains(&avg) {
+            "comfortable for a reader"
+        } else if avg > 22.0 {
+            "dense — shorter sentences will read better"
+        } else {
+            "choppy — try joining related ideas"
+        },
+        long = long_sentences,
+    )
 }
 
 /// Built-in intelligent offline essay evaluator.
@@ -504,6 +747,20 @@ pub fn evaluate_essay_offline(draft: &str, action: AiAction) -> String {
                 - **Eigene Meinung:** *„Meines Erachtens spricht vieles dafür, dass...“*\n\
                 - **Schluss:** *„Zusammenfassend lässt sich sagen, dass ein ausgewogener Kompromiss nötig ist.“*\n\n\
                 *Tip: Use the Redemittel Drawer in the right toolbar to insert these with one click!*"
+            )
+        }
+
+        AiAction::PromptImprove => {
+            crate::prompt::offline_improve(draft)
+        }
+
+        AiAction::Freeform => {
+            format!(
+                "## 🚀 Offline Note\n\n\
+                No AI endpoint is reachable, so the brief could not be executed. \
+                The configured brief is {} characters long; connect an endpoint in \
+                the AI Coach settings or rely on the offline evaluator for essays.",
+                draft.chars().count()
             )
         }
     }

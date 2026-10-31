@@ -53,7 +53,9 @@ pub struct AppConfig {
     #[serde(default = "default_canvas_width_mode")]
     pub canvas_width_mode: String, // "standard", "wide", "full"
     #[serde(default = "default_font_choice")]
-    pub font_choice: String, // "jetbrains_mono", "ibm_plex_mono", "vt323", "vazirmatn", "sans", "serif"
+    pub font_choice: String, // "jetbrains_mono", "ibm_plex_mono", "inter", "lora", "vt323", "vazirmatn", "sans", "serif"
+    #[serde(default = "default_font_size")]
+    pub font_size: f32, // editor body size in points before zoom
     #[serde(default = "default_view_mode")]
     pub view_mode: String, // "edit", "split", "preview"
     #[serde(default = "default_app_mode")]
@@ -82,6 +84,15 @@ pub struct AppConfig {
     /// `ar`, `fr`, `es`). See `i18n::Lang`.
     #[serde(default = "default_language")]
     pub language: String,
+    /// Language the built-in teacher agent helps with (English name).
+    #[serde(default = "default_tutor_language")]
+    pub tutor_language: String,
+    /// CEFR-style level the teacher targets.
+    #[serde(default = "default_tutor_level")]
+    pub tutor_level: String,
+    /// Free-form learning goal the teacher adapts to.
+    #[serde(default)]
+    pub tutor_goal: String,
 }
 
 fn default_canvas_width_mode() -> String {
@@ -89,6 +100,15 @@ fn default_canvas_width_mode() -> String {
 }
 fn default_font_choice() -> String {
     "jetbrains_mono".to_string()
+}
+fn default_font_size() -> f32 {
+    15.0
+}
+fn default_tutor_language() -> String {
+    "German".to_string()
+}
+fn default_tutor_level() -> String {
+    "B2".to_string()
 }
 fn default_view_mode() -> String {
     "edit".to_string()
@@ -144,6 +164,7 @@ impl Default for AppConfig {
             canvas_max_width: 120.0,
             canvas_width_mode: "wide".to_string(),
             font_choice: "jetbrains_mono".to_string(),
+            font_size: 15.0,
             view_mode: "edit".to_string(),
             app_mode: "writing".to_string(),
             paper_pattern: "dot".to_string(),
@@ -157,6 +178,9 @@ impl Default for AppConfig {
             ai_provider: "hermes".to_string(),
             ai_api_key: String::new(),
             language: "en".to_string(),
+            tutor_language: "German".to_string(),
+            tutor_level: "B2".to_string(),
+            tutor_goal: String::new(),
         }
     }
 }

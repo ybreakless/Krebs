@@ -58,7 +58,7 @@ APP_DIR="$HOME/.local/share/krebs"
 mkdir -p "$APP_DIR"
 
 REPO_URL="https://github.com/ybreakless/Krebs"
-TAG="v0.1.0"
+TAG="v0.2.0"
 
 echo -e "${CYAN}>>> Detecting environment: ${BOLD}$OS_TYPE ($ARCH_TYPE)${NC}"
 

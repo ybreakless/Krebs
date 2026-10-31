@@ -17,7 +17,7 @@ $ErrorActionPreference = "Stop"
 $repoOwner = "ybreakless"
 $repoName  = "Krebs"
 $repoUrl   = "https://github.com/$repoOwner/$repoName"
-$fallbackTag = "v0.1.0"
+$fallbackTag = "v0.2.0"
 
 $installDir = "$env:LOCALAPPDATA\Programs\Krebs"
 $dataDir = Join-Path $installDir "krebs_data"

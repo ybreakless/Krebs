@@ -7,6 +7,7 @@ pub mod export;
 pub mod i18n;
 pub mod icons;
 pub mod markdown_view;
+pub mod prompt;
 pub mod sidebar;
 pub mod study;
 pub mod theme;
@@ -29,7 +30,7 @@ use iced::window;
 use iced::{Alignment, Color, Element, Font, Length, Size, Subscription, Task, Theme};
 
 use crate::icons::*;
-use ai::{AiAction, AiProvider, AiState};
+use ai::{AiAction, AiProvider, AiState, TutorProfile};
 use config::{AppConfig, RecoveryManager, SnippetsConfig, SnippetsDeManager};
 use editor::{
     apply_smart_typography, detect_paragraph_direction, insert_text_at_cursor,
@@ -38,7 +39,8 @@ use editor::{
 };
 use sidebar::{view_left_rail, SidebarAction};
 use theme::{
-    active_tool_button_style, banner_container_style, canvas_container_style, card_container_style,
+    accent_button_style, active_tool_button_style, banner_container_style, canvas_container_style,
+    card_container_style,
     drawer_container_style, modal_container_style, rail_button_style, search_container_style,
     tab_active_button_style, tab_inactive_button_style, text_editor_style, text_input_style,
     toolbar_floating_style, wipe_button_style, AccentChoice, ThemeMode, ACCENT_AMBER, ACCENT_CYAN,
@@ -56,6 +58,8 @@ pub static VAZIRMATN_REGULAR: &[u8] = include_bytes!("../fonts/Vazirmatn-Regular
 pub static VAZIRMATN_BOLD: &[u8] = include_bytes!("../fonts/Vazirmatn-Bold.ttf");
 pub static JETBRAINS_MONO_REGULAR: &[u8] = include_bytes!("../fonts/JetBrainsMono-Regular.ttf");
 pub static VT323_REGULAR: &[u8] = include_bytes!("../fonts/VT323-Regular.ttf");
+pub static INTER_REGULAR: &[u8] = include_bytes!("../fonts/Inter-Variable.ttf");
+pub static LORA_REGULAR: &[u8] = include_bytes!("../fonts/Lora-Variable.ttf");
 
 /// Wraps any widget in a bottom-anchored hover tooltip.
 ///
@@ -121,6 +125,24 @@ pub fn font_jetbrains_mono() -> Font {
     }
 }
 
+pub fn font_inter() -> Font {
+    Font {
+        family: font::Family::Name("Inter"),
+        weight: font::Weight::Normal,
+        stretch: font::Stretch::Normal,
+        style: font::Style::Normal,
+    }
+}
+
+pub fn font_lora() -> Font {
+    Font {
+        family: font::Family::Name("Lora"),
+        weight: font::Weight::Normal,
+        stretch: font::Stretch::Normal,
+        style: font::Style::Normal,
+    }
+}
+
 pub fn font_vt323() -> Font {
     Font {
         family: font::Family::Name("VT323"),
@@ -161,6 +183,8 @@ pub fn font_serif() -> Font {
 pub enum FontChoice {
     JetBrainsMono,
     IbmPlexMono,
+    Inter,
+    Lora,
     Vt323,
     Vazirmatn,
     Sans,
@@ -171,6 +195,8 @@ impl FontChoice {
     pub fn from_str_name(s: &str) -> Self {
         match s {
             "ibm_plex_mono" => Self::IbmPlexMono,
+            "inter" => Self::Inter,
+            "lora" => Self::Lora,
             "vt323" => Self::Vt323,
             "vazirmatn" => Self::Vazirmatn,
             "sans" => Self::Sans,
@@ -183,6 +209,8 @@ impl FontChoice {
         match self {
             Self::JetBrainsMono => "jetbrains_mono",
             Self::IbmPlexMono => "ibm_plex_mono",
+            Self::Inter => "inter",
+            Self::Lora => "lora",
             Self::Vt323 => "vt323",
             Self::Vazirmatn => "vazirmatn",
             Self::Sans => "sans",
@@ -194,6 +222,8 @@ impl FontChoice {
         match self {
             Self::JetBrainsMono => "JetBrains Mono",
             Self::IbmPlexMono => "IBM Plex Mono",
+            Self::Inter => "Inter",
+            Self::Lora => "Lora",
             Self::Vt323 => "VT323 Retro CRT",
             Self::Vazirmatn => "Vazirmatn Persian",
             Self::Sans => "System Sans",
@@ -205,6 +235,8 @@ impl FontChoice {
         match self {
             Self::JetBrainsMono => font_jetbrains_mono(),
             Self::IbmPlexMono => font_ibm_plex_mono(),
+            Self::Inter => font_inter(),
+            Self::Lora => font_lora(),
             Self::Vt323 => font_vt323(),
             Self::Vazirmatn => font_vazirmatn(),
             Self::Sans => font_sans(),
@@ -350,13 +382,61 @@ struct Krebs {
     is_maximized: bool,
     show_top_toolbar: bool,
     ai_state: AiState,
+    prompt: PromptState,
+    show_agent_modal: bool,
+    agent: AgentModalState,
+    keyboard_modifiers: Modifiers,
     right_drawer_tab: RightDrawerTab,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RightDrawerTab {
-    AiCoach,
     Redemittel,
+    PromptStudio,
+}
+
+/// Session state of the centered Agent Studio modal.
+#[derive(Debug, Clone)]
+struct AgentModalState {
+    is_testing: bool,
+    test_status: Option<(bool, String)>,
+    is_running: bool,
+    result: String,
+}
+
+impl Default for AgentModalState {
+    fn default() -> Self {
+        Self {
+            is_testing: false,
+            test_status: None,
+            is_running: false,
+            result: String::new(),
+        }
+    }
+}
+
+/// The visual prompt builder state (session-scoped, not persisted).
+#[derive(Debug, Clone)]
+struct PromptState {
+    spec: prompt::PromptSpec,
+    tools: Vec<bool>,
+    is_improving: bool,
+    is_running: bool,
+    improved_text: String,
+    run_text: String,
+}
+
+impl Default for PromptState {
+    fn default() -> Self {
+        Self {
+            spec: prompt::PromptSpec::default(),
+            tools: vec![false; prompt::MCP_TOOLS.len()],
+            is_improving: false,
+            is_running: false,
+            improved_text: String::new(),
+            run_text: String::new(),
+        }
+    }
 }
 
 /// The export formats offered by the unified export modal.
@@ -380,6 +460,7 @@ enum Message {
     FileDropped(PathBuf),
     Tick,
     KeyboardEvent(Key, Modifiers),
+    ModifiersChanged(Modifiers),
     MouseScrolled(f32, Modifiers),
     ReloadFromDisk,
     DismissExternalBanner,
@@ -389,6 +470,19 @@ enum Message {
     ToggleFontModal,
     ToggleTopToolbar,
     ToggleAiDrawer,
+    ToggleAgentModal,
+    CloseAgentModal,
+    AgentTestConnection,
+    AgentTestFinished(bool, String),
+    TutorSetLanguage(String),
+    TutorSetLevel(String),
+    TutorSetGoal(String),
+    TutorAsk,
+    TutorAnswered(String, bool),
+    CopyTeacherInstruction,
+    CopyTutorResult,
+    InsertTutorFeedback,
+    AdjustFontSize(f32),
     SetRightDrawerTab(RightDrawerTab),
     SelectAiProvider(AiProvider),
     AiApiKeyChanged(String),
@@ -403,7 +497,6 @@ enum Message {
     AiInsertFeedback,
     AiSetEndpoint(String),
     AiSetModel(String),
-    AiToggleSettings,
     ToggleThemeModal,
     CloseThemeModal,
     SelectTheme(ThemeMode),
@@ -421,6 +514,15 @@ enum Message {
     CloseStudyModal,
     StudyReveal,
     StudyGrade(study::Grade),
+    PromptSetField(prompt::PromptField, String),
+    PromptToggleTool(usize),
+    PromptImprove,
+    PromptImproved(String, bool),
+    PromptRunTest,
+    PromptRanTest(String, bool),
+    PromptCopyPack,
+    PromptCopyFor(prompt::CopyTarget),
+    PromptCopyImproved,
     ToggleTourModal,
     CloseTourModal,
     TourNext,
@@ -486,6 +588,7 @@ impl Krebs {
 
         let mut initial_text = String::new();
         let mut loaded_path = None;
+        let mut recovered_path = None;
 
         if let Some(path) = initial_file {
             if path.exists() {
@@ -503,6 +606,7 @@ impl Krebs {
                 if let Ok(content) = std::fs::read_to_string(first_recovery) {
                     if !content.trim().is_empty() {
                         initial_text = content;
+                        recovered_path = Some(first_recovery.clone());
                     }
                 }
             }
@@ -529,7 +633,7 @@ impl Krebs {
             content,
             history: EditorHistory::default(),
             current_file_path: loaded_path,
-            active_recovery_file: None,
+            active_recovery_file: recovered_path,
             is_dirty: false,
             last_edit_time: now,
             last_checkpoint_time: now,
@@ -572,7 +676,11 @@ impl Krebs {
                 temp_model: ai_model,
                 ..Default::default()
             },
-            right_drawer_tab: RightDrawerTab::AiCoach,
+            prompt: PromptState::default(),
+            show_agent_modal: false,
+            agent: AgentModalState::default(),
+            keyboard_modifiers: Modifiers::default(),
+            right_drawer_tab: RightDrawerTab::Redemittel,
         };
 
         let load_fonts_task = Task::batch(vec![
@@ -582,6 +690,8 @@ impl Krebs {
             font::load(Cow::Borrowed(VAZIRMATN_BOLD)).map(Message::FontLoaded),
             font::load(Cow::Borrowed(JETBRAINS_MONO_REGULAR)).map(Message::FontLoaded),
             font::load(Cow::Borrowed(VT323_REGULAR)).map(Message::FontLoaded),
+            font::load(Cow::Borrowed(INTER_REGULAR)).map(Message::FontLoaded),
+            font::load(Cow::Borrowed(LORA_REGULAR)).map(Message::FontLoaded),
         ]);
 
         (app, load_fonts_task)
@@ -599,6 +709,60 @@ impl Krebs {
 
     fn is_rtl(&self) -> bool {
         i18n::is_rtl(&self.config.language)
+    }
+
+    /// Marks the buffer dirty after a programmatic edit (inserts, formatting).
+    fn touch_content(&mut self) {
+        self.is_dirty = true;
+        self.last_edit_time = Instant::now();
+        self.stats = DocumentStats::compute(&self.content.text());
+    }
+
+    /// The indices of the MCP tools the user switched on.
+    #[must_use]
+    fn prompt_tools_enabled(&self) -> Vec<usize> {
+        self.prompt
+            .tools
+            .iter()
+            .enumerate()
+            .filter(|(_, enabled)| **enabled)
+            .map(|(index, _)| index)
+            .collect()
+    }
+
+    /// The full agent pack: rendered brief plus the enabled tool section.
+    #[must_use]
+    fn prompt_pack(&self) -> String {
+        prompt::render_agent_pack(&self.prompt.spec, &self.prompt_tools_enabled())
+    }
+
+    /// The learner profile the built-in teacher agent adapts to.
+    #[must_use]
+    fn tutor_profile(&self) -> TutorProfile {
+        TutorProfile {
+            language: self.config.tutor_language.clone(),
+            level: self.config.tutor_level.clone(),
+            goal: self.config.tutor_goal.clone(),
+        }
+    }
+
+    /// Opens the centered Agent Studio and resets its transient status.
+    fn open_agent_modal(&mut self) {
+        self.show_agent_modal = true;
+        self.agent.test_status = None;
+        self.ai_state.temp_endpoint = self.ai_state.endpoint.clone();
+        self.ai_state.temp_model = self.ai_state.model.clone();
+    }
+
+    /// Persists the endpoint/model currently held in the modal’s temp fields.
+    fn commit_ai_settings(&mut self) {
+        self.ai_state.endpoint = self.ai_state.temp_endpoint.clone();
+        self.ai_state.model = self.ai_state.temp_model.clone();
+        self.config.ai_endpoint = self.ai_state.endpoint.clone();
+        self.config.ai_model = self.ai_state.model.clone();
+        self.config.ai_api_key = self.ai_state.api_key.clone();
+        self.config.ai_provider = self.ai_state.provider.to_str_id().to_string();
+        let _ = self.config.save();
     }
 
     fn update_search_matches(&mut self) {
@@ -683,8 +847,128 @@ impl Krebs {
             }
 
             Message::ToggleAiDrawer => {
-                self.config.show_right_drawer = !self.config.show_right_drawer;
-                self.right_drawer_tab = RightDrawerTab::AiCoach;
+                self.open_agent_modal();
+                Task::none()
+            }
+
+            Message::ToggleAgentModal => {
+                if self.show_agent_modal {
+                    self.show_agent_modal = false;
+                    self.commit_ai_settings();
+                } else {
+                    self.open_agent_modal();
+                }
+                Task::none()
+            }
+
+            Message::CloseAgentModal => {
+                self.show_agent_modal = false;
+                self.commit_ai_settings();
+                Task::none()
+            }
+
+            Message::AgentTestConnection => {
+                self.agent.is_testing = true;
+                self.agent.test_status = None;
+                let provider = self.ai_state.provider;
+                let endpoint = self.ai_state.temp_endpoint.clone();
+                let model = self.ai_state.temp_model.clone();
+                let api_key = self.ai_state.api_key.clone();
+                Task::perform(
+                    async move { ai::probe_connection(provider, endpoint, model, api_key) },
+                    |(ok, msg)| Message::AgentTestFinished(ok, msg),
+                )
+            }
+
+            Message::AgentTestFinished(ok, detail) => {
+                self.agent.is_testing = false;
+                self.agent.test_status = Some((ok, detail.clone()));
+                if ok {
+                    self.commit_ai_settings();
+                    self.notify(i18n::t(self.lang(), i18n::Key::Connected));
+                } else {
+                    self.notify(format!("{}: {}", i18n::t(self.lang(), i18n::Key::NotConnected), detail));
+                }
+                Task::none()
+            }
+
+            Message::TutorSetLanguage(value) => {
+                self.config.tutor_language = value;
+                let _ = self.config.save();
+                Task::none()
+            }
+
+            Message::TutorSetLevel(value) => {
+                self.config.tutor_level = value;
+                let _ = self.config.save();
+                Task::none()
+            }
+
+            Message::TutorSetGoal(value) => {
+                self.config.tutor_goal = value;
+                let _ = self.config.save();
+                Task::none()
+            }
+
+            Message::TutorAsk => {
+                self.agent.is_running = true;
+                let provider = self.ai_state.provider;
+                let endpoint = self.ai_state.temp_endpoint.clone();
+                let model = self.ai_state.temp_model.clone();
+                let api_key = self.ai_state.api_key.clone();
+                let profile = self.tutor_profile();
+                let note = self.content.text();
+                let temperature = self.ai_state.temperature;
+                let max_tokens = self.ai_state.max_tokens;
+                Task::perform(
+                    async move { ai::run_tutor_task(provider, endpoint, model, api_key, profile, note, temperature, max_tokens) },
+                    |(res, offline)| Message::TutorAnswered(res, offline),
+                )
+            }
+
+            Message::TutorAnswered(res, offline) => {
+                self.agent.is_running = false;
+                self.agent.result = res;
+                self.notify(if offline {
+                    "Offline study plan ready — connect a model for corrections"
+                } else {
+                    "Teacher feedback ready"
+                });
+                Task::none()
+            }
+
+            Message::CopyTeacherInstruction => {
+                if let Ok(mut cb) = arboard::Clipboard::new() {
+                    let _ = cb.set_text(self.tutor_profile().instruction());
+                    self.notify(i18n::t(self.lang(), i18n::Key::PromptCopied));
+                }
+                Task::none()
+            }
+
+            Message::CopyTutorResult => {
+                if !self.agent.result.is_empty() {
+                    if let Ok(mut cb) = arboard::Clipboard::new() {
+                        let _ = cb.set_text(&self.agent.result);
+                        self.notify(i18n::t(self.lang(), i18n::Key::PromptCopied));
+                    }
+                }
+                Task::none()
+            }
+
+            Message::InsertTutorFeedback => {
+                if !self.agent.result.is_empty() {
+                    let formatted = format!("\n\n---\n{}\n---\n", self.agent.result);
+                    insert_text_at_cursor(&mut self.content, &formatted);
+                    self.stats = DocumentStats::compute(&self.content.text());
+                    self.is_dirty = true;
+                    self.last_edit_time = Instant::now();
+                    self.notify("Teacher feedback inserted");
+                }
+                Task::none()
+            }
+
+            Message::AdjustFontSize(delta) => {
+                self.config.font_size = (self.config.font_size + delta).clamp(11.0, 28.0);
                 let _ = self.config.save();
                 Task::none()
             }
@@ -768,8 +1052,10 @@ impl Krebs {
                 let model = self.ai_state.model.clone();
                 let api_key = self.ai_state.api_key.clone();
                 let text = self.content.text();
+                let temperature = self.ai_state.temperature;
+                let max_tokens = self.ai_state.max_tokens;
                 Task::perform(
-                    async move { ai::run_ai_task(provider, endpoint, model, api_key, text, action) },
+                    async move { ai::run_ai_task(provider, endpoint, model, api_key, text, action, temperature, max_tokens) },
                     |(res, is_offline)| Message::AiCompleted(res, is_offline),
                 )
             }
@@ -800,7 +1086,7 @@ impl Krebs {
                 if !self.ai_state.response_text.is_empty() {
                     let formatted = format!("\n\n---\n{}\n---\n", self.ai_state.response_text);
                     insert_text_at_cursor(&mut self.content, &formatted);
-                    self.stats = DocumentStats::compute(&self.content.text());
+                    self.touch_content();
                     self.notify("Inserted feedback into editor");
                 }
                 Task::none()
@@ -813,19 +1099,6 @@ impl Krebs {
 
             Message::AiSetModel(val) => {
                 self.ai_state.temp_model = val;
-                Task::none()
-            }
-
-            Message::AiToggleSettings => {
-                self.ai_state.show_settings = !self.ai_state.show_settings;
-                if !self.ai_state.show_settings {
-                    self.ai_state.endpoint = self.ai_state.temp_endpoint.clone();
-                    self.ai_state.model = self.ai_state.temp_model.clone();
-                    self.config.ai_endpoint = self.ai_state.endpoint.clone();
-                    self.config.ai_model = self.ai_state.model.clone();
-                    let _ = self.config.save();
-                    self.notify("AI settings saved");
-                }
                 Task::none()
             }
 
@@ -976,6 +1249,104 @@ impl Krebs {
                     if review.is_done() {
                         let lang = self.lang();
                         self.notify(i18n::t(lang, i18n::Key::StudyDone));
+                    }
+                }
+                Task::none()
+            }
+
+            Message::PromptSetField(field, value) => {
+                match field {
+                    prompt::PromptField::Persona => self.prompt.spec.persona = value,
+                    prompt::PromptField::Task => self.prompt.spec.task = value,
+                    prompt::PromptField::Context => self.prompt.spec.context = value,
+                    prompt::PromptField::Constraints => self.prompt.spec.constraints = value,
+                    prompt::PromptField::OutputFormat => self.prompt.spec.output_format = value,
+                }
+                Task::none()
+            }
+
+            Message::PromptToggleTool(index) => {
+                if let Some(flag) = self.prompt.tools.get_mut(index) {
+                    *flag = !*flag;
+                }
+                Task::none()
+            }
+
+            Message::PromptImprove | Message::PromptRunTest => {
+                let is_improve = matches!(message, Message::PromptImprove);
+                let action = if is_improve {
+                    AiAction::PromptImprove
+                } else {
+                    AiAction::Freeform
+                };
+                let text = self.prompt_pack();
+                if is_improve {
+                    self.prompt.is_improving = true;
+                } else {
+                    self.prompt.is_running = true;
+                }
+                let provider = self.ai_state.provider;
+                let endpoint = self.ai_state.endpoint.clone();
+                let model = self.ai_state.model.clone();
+                let api_key = self.ai_state.api_key.clone();
+                let temperature = self.ai_state.temperature;
+                let max_tokens = self.ai_state.max_tokens;
+                Task::perform(
+                    async move { ai::run_ai_task(provider, endpoint, model, api_key, text, action, temperature, max_tokens) },
+                    move |(res, is_offline)| {
+                        if is_improve {
+                            Message::PromptImproved(res, is_offline)
+                        } else {
+                            Message::PromptRanTest(res, is_offline)
+                        }
+                    },
+                )
+            }
+
+            Message::PromptImproved(res, is_offline) => {
+                self.prompt.is_improving = false;
+                self.prompt.improved_text = res;
+                self.notify(if is_offline {
+                    "Prompt improved via offline templates"
+                } else {
+                    "Prompt improved"
+                });
+                Task::none()
+            }
+
+            Message::PromptRanTest(res, is_offline) => {
+                self.prompt.is_running = false;
+                self.prompt.run_text = res;
+                self.notify(if is_offline {
+                    "Offline: connect an AI endpoint to run briefs"
+                } else {
+                    "Brief executed"
+                });
+                Task::none()
+            }
+
+            Message::PromptCopyPack => {
+                if let Ok(mut cb) = arboard::Clipboard::new() {
+                    let _ = cb.set_text(self.prompt_pack());
+                    self.notify(i18n::t(self.lang(), i18n::Key::PromptCopied));
+                }
+                Task::none()
+            }
+
+            Message::PromptCopyFor(target) => {
+                let text = prompt::render_for_target(target, &self.prompt_pack());
+                if let Ok(mut cb) = arboard::Clipboard::new() {
+                    let _ = cb.set_text(text);
+                    self.notify(i18n::t(self.lang(), i18n::Key::PromptCopied));
+                }
+                Task::none()
+            }
+
+            Message::PromptCopyImproved => {
+                if !self.prompt.improved_text.is_empty() {
+                    if let Ok(mut cb) = arboard::Clipboard::new() {
+                        let _ = cb.set_text(&self.prompt.improved_text);
+                        self.notify(i18n::t(self.lang(), i18n::Key::PromptCopied));
                     }
                 }
                 Task::none()
@@ -1373,8 +1744,13 @@ impl Krebs {
 
             Message::KeyboardEvent(key, modifiers) => self.handle_keyboard_shortcut(key, modifiers),
 
-            Message::MouseScrolled(delta, modifiers) => {
-                if modifiers.control() {
+            Message::ModifiersChanged(modifiers) => {
+                self.keyboard_modifiers = modifiers;
+                Task::none()
+            }
+
+            Message::MouseScrolled(delta, _modifiers) => {
+                if self.keyboard_modifiers.control() {
                     if delta > 0.0 {
                         self.zoom_level = (self.zoom_level + 0.1).min(3.0);
                     } else if delta < 0.0 {
@@ -1532,14 +1908,17 @@ impl Krebs {
             }
 
             SidebarAction::ToggleAiCoach => {
-                self.config.show_right_drawer = !self.config.show_right_drawer;
-                self.right_drawer_tab = RightDrawerTab::AiCoach;
-                let _ = self.config.save();
+                self.open_agent_modal();
                 Task::none()
             }
 
             SidebarAction::ToggleRightDrawer => {
                 self.config.show_right_drawer = !self.config.show_right_drawer;
+                if self.config.show_right_drawer
+                    && self.right_drawer_tab != RightDrawerTab::PromptStudio
+                {
+                    self.right_drawer_tab = RightDrawerTab::Redemittel;
+                }
                 let _ = self.config.save();
                 Task::none()
             }
@@ -1548,41 +1927,49 @@ impl Krebs {
 
             SidebarAction::FormatHeading1 => {
                 insert_text_at_cursor(&mut self.content, "# ");
+                self.touch_content();
                 Task::none()
             }
 
             SidebarAction::FormatHeading2 => {
                 insert_text_at_cursor(&mut self.content, "## ");
+                self.touch_content();
                 Task::none()
             }
 
             SidebarAction::FormatBold => {
                 wrap_markdown_syntax(&mut self.content, "**", "**", "bold text");
+                self.touch_content();
                 Task::none()
             }
 
             SidebarAction::FormatItalic => {
                 wrap_markdown_syntax(&mut self.content, "*", "*", "italic text");
+                self.touch_content();
                 Task::none()
             }
 
             SidebarAction::FormatStrikethrough => {
                 wrap_markdown_syntax(&mut self.content, "~~", "~~", "strikethrough");
+                self.touch_content();
                 Task::none()
             }
 
             SidebarAction::FormatBlockquote => {
                 insert_text_at_cursor(&mut self.content, "> ");
+                self.touch_content();
                 Task::none()
             }
 
             SidebarAction::FormatList => {
                 insert_text_at_cursor(&mut self.content, "- ");
+                self.touch_content();
                 Task::none()
             }
 
             SidebarAction::FormatCode => {
                 wrap_markdown_syntax(&mut self.content, "`", "`", "code");
+                self.touch_content();
                 Task::none()
             }
 
@@ -1605,13 +1992,13 @@ impl Krebs {
 
             SidebarAction::InsertGermanChar(ch) => {
                 insert_text_at_cursor(&mut self.content, ch);
-                self.stats = DocumentStats::compute(&self.content.text());
+                self.touch_content();
                 Task::none()
             }
 
             SidebarAction::InsertSnippet(snippet_text) => {
                 insert_text_at_cursor(&mut self.content, &snippet_text);
-                self.stats = DocumentStats::compute(&self.content.text());
+                self.touch_content();
                 self.notify("Inserted Redemittel connector");
                 Task::none()
             }
@@ -1731,6 +2118,12 @@ impl Krebs {
                 Key::Character(ref s) if s == "1" => {
                     return self.update(Message::SetViewMode(ViewMode::Edit));
                 }
+                Key::Character(ref s) if s == "2" && modifiers.shift() => {
+                    insert_zwnj_at_cursor(&mut self.content);
+                    self.touch_content();
+                    self.notify(i18n::t(self.lang(), i18n::Key::ZwnjInserted));
+                    return Task::none();
+                }
                 Key::Character(ref s) if s == "2" => {
                     return self.update(Message::SetViewMode(ViewMode::Split));
                 }
@@ -1763,10 +2156,12 @@ impl Krebs {
                 }
                 Key::Character(ref s) if s.eq_ignore_ascii_case("b") => {
                     wrap_markdown_syntax(&mut self.content, "**", "**", "bold text");
+                    self.touch_content();
                     return Task::none();
                 }
                 Key::Character(ref s) if s.eq_ignore_ascii_case("i") => {
                     wrap_markdown_syntax(&mut self.content, "*", "*", "italic text");
+                    self.touch_content();
                     return Task::none();
                 }
                 Key::Character(ref s) if s.eq_ignore_ascii_case("z") => {
@@ -1793,11 +2188,6 @@ impl Krebs {
                 Key::Character(ref s) if s == "]" => {
                     return self.update(Message::AdjustSplitRatio(0.05));
                 }
-                Key::Character(ref s) if s == "2" && modifiers.shift() => {
-                    insert_zwnj_at_cursor(&mut self.content);
-                    self.notify(i18n::t(self.lang(), i18n::Key::ZwnjInserted));
-                    return Task::none();
-                }
                 _ => {}
             }
         }
@@ -1821,6 +2211,11 @@ impl Krebs {
         }
 
         if matches!(key, Key::Named(keyboard::key::Named::Escape)) {
+            if self.show_agent_modal {
+                self.show_agent_modal = false;
+                self.commit_ai_settings();
+                return Task::none();
+            }
             if self.show_tour_modal {
                 self.show_tour_modal = false;
                 return Task::none();
@@ -1864,20 +2259,24 @@ impl Krebs {
                 Key::Character(ref s) if s.eq_ignore_ascii_case("a") => {
                     let ch = if modifiers.shift() { "Ä" } else { "ä" };
                     insert_text_at_cursor(&mut self.content, ch);
+                    self.touch_content();
                     return Task::none();
                 }
                 Key::Character(ref s) if s.eq_ignore_ascii_case("o") => {
                     let ch = if modifiers.shift() { "Ö" } else { "ö" };
                     insert_text_at_cursor(&mut self.content, ch);
+                    self.touch_content();
                     return Task::none();
                 }
                 Key::Character(ref s) if s.eq_ignore_ascii_case("u") => {
                     let ch = if modifiers.shift() { "Ü" } else { "ü" };
                     insert_text_at_cursor(&mut self.content, ch);
+                    self.touch_content();
                     return Task::none();
                 }
                 Key::Character(ref s) if s.eq_ignore_ascii_case("s") => {
                     insert_text_at_cursor(&mut self.content, "ß");
+                    self.touch_content();
                     return Task::none();
                 }
                 _ => {}
@@ -1894,6 +2293,9 @@ impl Krebs {
             Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
                 Some(Message::KeyboardEvent(key, modifiers))
             }
+            Event::Keyboard(keyboard::Event::ModifiersChanged(modifiers)) => {
+                Some(Message::ModifiersChanged(modifiers))
+            }
             Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
                 let y = match delta {
                     mouse::ScrollDelta::Lines { y, .. } => y,
@@ -1909,7 +2311,7 @@ impl Krebs {
     }
 
     fn view(&self) -> Element<'_, Message> {
-        let base_font_size = 15.0 * self.zoom_level;
+        let base_font_size = self.config.font_size * self.zoom_level;
 
         let is_persian_doc = {
             let first_line = self.content.text().lines().next().unwrap_or("").to_string();
@@ -1965,8 +2367,7 @@ impl Krebs {
                     self.is_german_bar_open,
                     self.app_mode == AppMode::Whiteboard,
                     self.search.is_open,
-                    self.config.show_right_drawer
-                        && self.right_drawer_tab == RightDrawerTab::AiCoach,
+                    self.show_agent_modal,
                     self.lang(),
                 )
                 .map(Message::Sidebar),
@@ -2005,6 +2406,21 @@ impl Krebs {
             .width(Length::Fill)
             .height(Length::Fill)
             .style(canvas_container_style)];
+
+        if self.show_agent_modal {
+            root_stack = root_stack.push(
+                container(self.view_agent_modal())
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .center(Length::Fill)
+                    .style(|_t| container::Style {
+                        background: Some(iced::Background::Color(Color::from_rgba(
+                            0.0, 0.0, 0.0, 0.72,
+                        ))),
+                        ..Default::default()
+                    }),
+            );
+        }
 
         if self.show_shortcuts_modal {
             root_stack = root_stack.push(
@@ -2330,30 +2746,6 @@ impl Krebs {
         let accent = self.accent_choice.color();
         let lang = self.lang();
 
-        let is_ai = self.right_drawer_tab == RightDrawerTab::AiCoach;
-        let ai_tab_style = if is_ai {
-            tab_active_button_style
-        } else {
-            tab_inactive_button_style
-        };
-        let ai_title = format!("✨ {}", self.ai_state.provider.label());
-        let btn_ai_tab = button(
-            row![
-                render_svg_icon(SVG_ROBOT, 14, if is_ai { accent } else { TEXT_MUTED }),
-                text(ai_title).size(12),
-            ]
-            .spacing(5)
-            .align_y(Alignment::Center),
-        )
-        .on_press(Message::SetRightDrawerTab(RightDrawerTab::AiCoach))
-        .style(ai_tab_style)
-        .padding(iced::Padding {
-            top: 4.0,
-            bottom: 4.0,
-            left: 10.0,
-            right: 10.0,
-        });
-
         let is_de = self.right_drawer_tab == RightDrawerTab::Redemittel;
         let de_tab_style = if is_de {
             tab_active_button_style
@@ -2370,6 +2762,29 @@ impl Krebs {
         )
         .on_press(Message::SetRightDrawerTab(RightDrawerTab::Redemittel))
         .style(de_tab_style)
+        .padding(iced::Padding {
+            top: 4.0,
+            bottom: 4.0,
+            left: 10.0,
+            right: 10.0,
+        });
+
+        let is_prompt = self.right_drawer_tab == RightDrawerTab::PromptStudio;
+        let prompt_tab_style = if is_prompt {
+            tab_active_button_style
+        } else {
+            tab_inactive_button_style
+        };
+        let btn_prompt_tab = button(
+            row![
+                render_svg_icon(SVG_AI, 14, if is_prompt { accent } else { TEXT_MUTED }),
+                text(i18n::t(lang, i18n::Key::PromptStudio)).size(12),
+            ]
+            .spacing(5)
+            .align_y(Alignment::Center),
+        )
+        .on_press(Message::SetRightDrawerTab(RightDrawerTab::PromptStudio))
+        .style(prompt_tab_style)
         .padding(iced::Padding {
             top: 4.0,
             bottom: 4.0,
@@ -2396,8 +2811,8 @@ impl Krebs {
             .height(26);
 
         let drawer_header = row![
-            btn_ai_tab,
             btn_de_tab,
+            btn_prompt_tab,
             Space::with_width(Length::Fill),
             btn_shrink,
             btn_expand,
@@ -2407,8 +2822,8 @@ impl Krebs {
         .align_y(Alignment::Center);
 
         let drawer_body: Element<'a, Message> = match self.right_drawer_tab {
-            RightDrawerTab::AiCoach => self.view_ai_drawer_content(accent),
             RightDrawerTab::Redemittel => self.view_redemittel_drawer_content(),
+            RightDrawerTab::PromptStudio => self.view_prompt_drawer_content(),
         };
 
         let drawer_col = column![
@@ -2431,318 +2846,6 @@ impl Krebs {
             .height(Length::Fill)
             .style(drawer_container_style)
             .into()
-    }
-
-    fn view_ai_drawer_content<'a>(&'a self, accent: Color) -> Element<'a, Message> {
-        let lang = self.lang();
-        let provider_chip = |prov: AiProvider, name: &'static str| {
-            let is_sel = self.ai_state.provider == prov;
-            button(
-                text(name)
-                    .size(10.0)
-                    .color(if is_sel { accent } else { TEXT_PRIMARY }),
-            )
-            .on_press(Message::SelectAiProvider(prov))
-            .style(if is_sel {
-                tab_active_button_style
-            } else {
-                rail_button_style
-            })
-            .padding(iced::Padding {
-                top: 3.5,
-                bottom: 3.5,
-                left: 7.0,
-                right: 7.0,
-            })
-        };
-
-        let providers_row = row![
-            provider_chip(AiProvider::Hermes, "🦙 Hermes 3"),
-            provider_chip(AiProvider::Claude, "🧠 Claude 3.5"),
-            provider_chip(AiProvider::ChatGPT, "🟢 GPT-4o"),
-            provider_chip(AiProvider::DeepSeek, "⚡ DeepSeek"),
-            provider_chip(AiProvider::Custom, "⚙️ Custom"),
-        ]
-        .spacing(4)
-        .align_y(Alignment::Center);
-
-        let provider_header = column![
-            text(i18n::t(lang, i18n::Key::ChooseAgent))
-                .size(9.0)
-                .color(TEXT_MUTED),
-            providers_row,
-        ]
-        .spacing(4);
-
-        let maybe_api_key = if self.ai_state.provider.requires_api_key() {
-            let key_placeholder = match self.ai_state.provider {
-                AiProvider::Claude => "Enter Anthropic API key (sk-ant-...)",
-                AiProvider::ChatGPT => "Enter OpenAI API key (sk-...)",
-                AiProvider::DeepSeek => "Enter DeepSeek API key (sk-...)",
-                _ => "Enter API Key / Bearer Token",
-            };
-            Some(
-                container(
-                    column![
-                        row![
-                            render_svg_icon(SVG_KEY, 12, ACCENT_AMBER),
-                            text(i18n::t(lang, i18n::Key::ApiKey))
-                                .size(9.0)
-                                .color(ACCENT_AMBER),
-                            Space::with_width(Length::Fill),
-                            text(if self.ai_state.api_key.trim().is_empty() {
-                                "⚠️ Key Required"
-                            } else {
-                                "✓ Configured"
-                            })
-                            .size(9.0)
-                            .color(
-                                if self.ai_state.api_key.trim().is_empty() {
-                                    ACCENT_AMBER
-                                } else {
-                                    ACCENT_GREEN
-                                }
-                            ),
-                        ]
-                        .spacing(5)
-                        .align_y(Alignment::Center),
-                        text_input(key_placeholder, &self.ai_state.api_key)
-                            .on_input(Message::AiApiKeyChanged)
-                            .secure(true)
-                            .size(11)
-                            .style(text_input_style),
-                    ]
-                    .spacing(4),
-                )
-                .padding(6)
-                .width(Length::Fill)
-                .style(card_container_style),
-            )
-        } else {
-            None
-        };
-
-        let action_btn = |action: AiAction, label: &'static str, svg_icon: &'static [u8]| {
-            let is_active = self.ai_state.last_action == Some(action) && !self.ai_state.is_loading;
-            button(
-                row![
-                    render_svg_icon(svg_icon, 13, if is_active { accent } else { TEXT_MUTED }),
-                    text(label)
-                        .size(11)
-                        .color(if is_active { accent } else { TEXT_PRIMARY }),
-                ]
-                .spacing(5)
-                .align_y(Alignment::Center),
-            )
-            .on_press(Message::RunAiAction(action))
-            .style(if is_active {
-                tab_active_button_style
-            } else {
-                rail_button_style
-            })
-            .padding(iced::Padding {
-                top: 6.0,
-                bottom: 6.0,
-                left: 10.0,
-                right: 10.0,
-            })
-            .width(Length::Fill)
-        };
-
-        let row1 = row![
-            action_btn(AiAction::GradeEssay, "Grade Essay", SVG_CHECK),
-            action_btn(AiAction::TipsAndFeedback, "Writing Tips", SVG_AI),
-        ]
-        .spacing(6);
-
-        let row2 = row![
-            action_btn(AiAction::FixGrammar, "Fix Grammar", SVG_WRITE),
-            action_btn(AiAction::GermanB2C1, "German B2/C1", SVG_LIST),
-        ]
-        .spacing(6);
-
-        let actions_section = column![row1, row2].spacing(6);
-
-        let result_section: Element<'a, Message> = if self.ai_state.is_loading {
-            let agent_name = self.ai_state.provider.label();
-            container(
-                column![
-                    text(format!("✨ {} is evaluating your text...", agent_name))
-                        .size(12)
-                        .color(accent),
-                    text(i18n::t(self.lang(), i18n::Key::Analyzing))
-                        .size(10)
-                        .color(TEXT_MUTED),
-                ]
-                .spacing(6),
-            )
-            .padding(14)
-            .width(Length::Fill)
-            .style(card_container_style)
-            .into()
-        } else if !self.ai_state.response_text.is_empty() {
-            let offline_note: Option<Element<'a, Message>> = if self.ai_state.is_offline_fallback {
-                Some(
-                    container(
-                        text(format!(
-                            "⚡ Offline Evaluator • Model: {}",
-                            self.ai_state.provider.label()
-                        ))
-                        .size(10)
-                        .color(ACCENT_AMBER),
-                    )
-                    .padding(5)
-                    .width(Length::Fill)
-                    .style(card_container_style)
-                    .into(),
-                )
-            } else {
-                None
-            };
-
-            let scroll_box = scrollable(
-                container(
-                    text(&self.ai_state.response_text)
-                        .size(11.5)
-                        .color(TEXT_PRIMARY),
-                )
-                .padding(8)
-                .width(Length::Fill),
-            )
-            .height(Length::Fill);
-
-            let btn_copy = button(
-                row![
-                    render_svg_icon(SVG_CHECK, 11, TEXT_MUTED),
-                    text(i18n::t(lang, i18n::Key::CopyFeedback)).size(10.5),
-                ]
-                .spacing(4)
-                .align_y(Alignment::Center),
-            )
-            .on_press(Message::AiCopyFeedback)
-            .style(rail_button_style)
-            .padding(iced::Padding {
-                top: 4.0,
-                bottom: 4.0,
-                left: 8.0,
-                right: 8.0,
-            });
-
-            let btn_insert = button(
-                row![
-                    render_svg_icon(SVG_WRITE, 11, TEXT_MUTED),
-                    text(i18n::t(lang, i18n::Key::InsertAtCursor)).size(10.5),
-                ]
-                .spacing(4)
-                .align_y(Alignment::Center),
-            )
-            .on_press(Message::AiInsertFeedback)
-            .style(rail_button_style)
-            .padding(iced::Padding {
-                top: 4.0,
-                bottom: 4.0,
-                left: 8.0,
-                right: 8.0,
-            });
-
-            let action_bar = row![btn_copy, btn_insert].spacing(6);
-
-            let mut out_col = column![];
-            if let Some(note) = offline_note {
-                out_col = out_col.push(note);
-            }
-            out_col = out_col.push(
-                container(scroll_box)
-                    .height(Length::Fill)
-                    .style(card_container_style),
-            );
-            out_col = out_col.push(action_bar);
-
-            out_col.spacing(6).height(Length::Fill).into()
-        } else {
-            let agent_label = self.ai_state.provider.label();
-            let privacy_text = if self.ai_state.provider == AiProvider::Hermes {
-                "🔒 100% Private & Local\nRuns directly on your hardware via local Hermes/Ollama or the built-in offline engine."
-            } else {
-                "☁️ Cloud Model Active\nDirect API connection with your private key, or instant offline fallback if disconnected."
-            };
-            container(
-                column![
-                    text(format!("✨ {} Writing Studio", agent_label)).size(13).color(accent),
-                    text("Grade essays against CEFR rubrics, diagnose grammatical cadence, and receive Goethe/Telc B2/C1 suggestions.").size(11).color(Color::from_rgb(0.80, 0.84, 0.90)),
-                    container(
-                        text(privacy_text).size(10).color(ACCENT_AMBER)
-                    )
-                    .padding(6)
-                    .width(Length::Fill)
-                    .style(card_container_style),
-                ]
-                .spacing(8)
-            )
-            .padding(12)
-            .width(Length::Fill)
-            .style(card_container_style)
-            .into()
-        };
-
-        let settings_section: Element<'a, Message> = if self.ai_state.show_settings {
-            column![
-                text(i18n::t(lang, i18n::Key::AiEndpoint))
-                    .size(9)
-                    .color(TEXT_MUTED),
-                text_input("http://localhost:11434/v1", &self.ai_state.temp_endpoint)
-                    .on_input(Message::AiSetEndpoint)
-                    .size(11)
-                    .style(text_input_style),
-                text(i18n::t(lang, i18n::Key::ModelName))
-                    .size(9)
-                    .color(TEXT_MUTED),
-                text_input("hermes3", &self.ai_state.temp_model)
-                    .on_input(Message::AiSetModel)
-                    .size(11)
-                    .style(text_input_style),
-                button(text(i18n::t(lang, i18n::Key::Settings)).size(10))
-                    .on_press(Message::AiToggleSettings)
-                    .style(tab_active_button_style)
-                    .padding(4),
-            ]
-            .spacing(4)
-            .into()
-        } else {
-            row![
-                text(format!(
-                    "Model: {} • {}",
-                    self.ai_state.model,
-                    if self.ai_state.is_offline_fallback {
-                        "Offline"
-                    } else {
-                        "Online/Local"
-                    }
-                ))
-                .size(9.5)
-                .color(TEXT_MUTED),
-                Space::with_width(Length::Fill),
-                button(text(format!("⚙️ {}", i18n::t(lang, i18n::Key::Config))).size(9.5))
-                    .on_press(Message::AiToggleSettings)
-                    .style(rail_button_style)
-                    .padding(2),
-            ]
-            .align_y(Alignment::Center)
-            .into()
-        };
-
-        let mut full_col = column![provider_header];
-        if let Some(key_box) = maybe_api_key {
-            full_col = full_col.push(key_box);
-        }
-        full_col = full_col
-            .push(actions_section)
-            .push(result_section)
-            .push(settings_section)
-            .spacing(8)
-            .height(Length::Fill);
-
-        full_col.into()
     }
 
     fn view_redemittel_drawer_content<'a>(&'a self) -> Element<'a, Message> {
@@ -2820,81 +2923,269 @@ impl Krebs {
         .into()
     }
 
+    /// Prompt Studio & MCP hub inside the right drawer.
+    fn view_prompt_drawer_content<'a>(&'a self) -> Element<'a, Message> {
+        let lang = self.lang();
+        let prompt = &self.prompt;
+
+        let mut col = column![text(i18n::t(lang, i18n::Key::PromptStudio))
+            .size(11)
+            .color(TEXT_MUTED)]
+        .spacing(8);
+
+        // ---- Builder fields --------------------------------------------------
+        let fields: [(prompt::PromptField, &str, &str, &str); 5] = [
+            (
+                prompt::PromptField::Persona,
+                i18n::t(lang, i18n::Key::PromptPersona),
+                "You are a meticulous German B2 grader…",
+                &prompt.spec.persona,
+            ),
+            (
+                prompt::PromptField::Task,
+                i18n::t(lang, i18n::Key::PromptTask),
+                "Grade the attached essay…",
+                &prompt.spec.task,
+            ),
+            (
+                prompt::PromptField::Context,
+                i18n::t(lang, i18n::Key::PromptContext),
+                "Relevant files, facts, audience…",
+                &prompt.spec.context,
+            ),
+            (
+                prompt::PromptField::Constraints,
+                i18n::t(lang, i18n::Key::PromptConstraints),
+                "One rule per line",
+                &prompt.spec.constraints,
+            ),
+            (
+                prompt::PromptField::OutputFormat,
+                i18n::t(lang, i18n::Key::PromptOutput),
+                "Markdown, 3 sections, ≤ 400 words…",
+                &prompt.spec.output_format,
+            ),
+        ];
+        for (field, label, placeholder, value) in fields {
+            col = col.push(text(label).size(10).color(ACCENT_CYAN));
+            col = col.push(
+                text_input(placeholder, value)
+                    .on_input(move |s| Message::PromptSetField(field, s))
+                    .size(12)
+                    .style(text_input_style)
+                    .padding(6),
+            );
+        }
+
+        // ---- Live counters --------------------------------------------------
+        let rendered = self.prompt_pack();
+        col = col.push(
+            text(format!(
+                "{} · {} chars · ~{} tok",
+                i18n::t(lang, i18n::Key::PromptPack),
+                rendered.chars().count(),
+                prompt::estimate_tokens(&rendered)
+            ))
+            .size(10)
+            .color(TEXT_MUTED),
+        );
+
+        // ---- MCP tool toggles ------------------------------------------------
+        col = col.push(text(i18n::t(lang, i18n::Key::PromptTools)).size(10).color(TEXT_MUTED));
+        let mut tools_row = row![].spacing(4);
+        for (index, tool) in prompt::MCP_TOOLS.iter().enumerate() {
+            let on = prompt.tools.get(index).copied().unwrap_or(false);
+            let btn = button(
+                text(tool.name).size(9).color(if on {
+                    ACCENT_CYAN
+                } else {
+                    TEXT_MUTED
+                }),
+            )
+            .on_press(Message::PromptToggleTool(index))
+            .style(if on {
+                active_tool_button_style
+            } else {
+                rail_button_style
+            })
+            .padding(iced::Padding {
+                top: 3.0,
+                bottom: 3.0,
+                left: 6.0,
+                right: 6.0,
+            });
+            tools_row = tools_row.push(btn);
+        }
+        col = col.push(tools_row.wrap());
+
+        // ---- Action buttons --------------------------------------------------
+        let improve_btn = if prompt.is_improving {
+            button(text("⏳").size(12)).style(rail_button_style)
+        } else {
+            button(text(i18n::t(lang, i18n::Key::PromptImprove)).size(11).color(ACCENT_CYAN))
+                .on_press(Message::PromptImprove)
+                .style(rail_button_style)
+        }
+        .padding(6);
+        let run_btn = if prompt.is_running {
+            button(text("⏳").size(12)).style(rail_button_style)
+        } else {
+            button(text(i18n::t(lang, i18n::Key::PromptRun)).size(11).color(ACCENT_GREEN))
+                .on_press(Message::PromptRunTest)
+                .style(rail_button_style)
+        }
+        .padding(6);
+        let copy_pack_btn =
+            button(text(i18n::t(lang, i18n::Key::PromptCopyPack)).size(11).color(TEXT_PRIMARY))
+                .on_press(Message::PromptCopyPack)
+                .style(rail_button_style)
+                .padding(6);
+        col = col.push(row![improve_btn, run_btn, copy_pack_btn].spacing(6));
+
+        // ---- Copy for coding agents ----------------------------------------
+        col = col.push(text(i18n::t(lang, i18n::Key::PromptCopyFor)).size(10).color(TEXT_MUTED));
+        let mut targets_row = row![].spacing(4);
+        for target in prompt::CopyTarget::ALL {
+            targets_row = targets_row.push(
+                button(text(target.label()).size(10).color(TEXT_PRIMARY))
+                    .on_press(Message::PromptCopyFor(target))
+                    .style(rail_button_style)
+                    .padding(iced::Padding {
+                        top: 3.0,
+                        bottom: 3.0,
+                        left: 6.0,
+                        right: 6.0,
+                    }),
+            );
+        }
+        col = col.push(targets_row);
+
+        // ---- Results --------------------------------------------------------
+        if !prompt.improved_text.is_empty() {
+            col = col.push(
+                button(
+                    text(i18n::t(lang, i18n::Key::PromptCopyImproved))
+                        .size(10)
+                        .color(ACCENT_CYAN),
+                )
+                .on_press(Message::PromptCopyImproved)
+                .style(rail_button_style)
+                .padding(4),
+            );
+            col = col.push(
+                container(
+                    scrollable(
+                        text(&prompt.improved_text)
+                            .size(10.5)
+                            .color(TEXT_PRIMARY),
+                    )
+                    .height(140),
+                )
+                .padding(8)
+                .width(Length::Fill)
+                .style(card_container_style),
+            );
+        }
+        if !prompt.run_text.is_empty() {
+            col = col.push(
+                container(
+                    scrollable(text(&prompt.run_text).size(10.5).color(TEXT_PRIMARY)).height(140),
+                )
+                .padding(8)
+                .width(Length::Fill)
+                .style(card_container_style),
+            );
+        }
+
+        scrollable(col).height(Length::Fill).into()
+    }
+
     fn view_top_header<'a>(&'a self) -> Element<'a, Message> {
         let accent = self.accent_choice.color();
         let lang = self.lang();
 
-        // 1. Mode Switcher Chips (Writing Studio vs Whiteboard) - Bigger buttons
+        // ---- App Logo/Wordmark ----------------------------------------------
+        let logo_mark = container(
+            row![
+                // Logo icon
+                container(render_svg_icon(SVG_CRAB, 20, accent))
+                    .padding(iced::Padding {
+                        top: 2.0,
+                        bottom: 2.0,
+                        left: 2.0,
+                        right: 6.0,
+                    }),
+                // App name
+                column![
+                    text("Krebs").size(15).color(TEXT_PRIMARY).font(Font {
+                        family: font::Family::Name("Inter"),
+                        weight: font::Weight::Bold,
+                        ..Default::default()
+                    }),
+                    text(match self.app_mode {
+                        AppMode::Writing => "Studio",
+                        AppMode::Whiteboard => "Whiteboard",
+                    })
+                    .size(9)
+                    .color(TEXT_MUTED)
+                    .font(Font {
+                        family: font::Family::Name("Inter"),
+                        weight: font::Weight::Normal,
+                        ..Default::default()
+                    }),
+                ]
+                .spacing(0)
+                .align_x(Alignment::Start),
+            ]
+            .spacing(0)
+            .align_y(Alignment::Center),
+        )
+        .padding(iced::Padding {
+            left: 8.0,
+            right: 12.0,
+            top: 4.0,
+            bottom: 4.0,
+        });
+
+        // ---- 1. Studio mode chips (Write / Whiteboard) ----------------------
         let is_writing = self.app_mode == AppMode::Writing;
-        let write_tab_style = if is_writing {
-            tab_active_button_style
-        } else {
-            tab_inactive_button_style
-        };
         let btn_write = button(center(
             row![
-                render_svg_icon(SVG_WRITE, 15, if is_writing { accent } else { TEXT_MUTED }),
-                text(i18n::t(lang, i18n::Key::Write)).size(12.5),
+                render_svg_icon(SVG_WRITE, 16, if is_writing { accent } else { TEXT_MUTED }),
+                text(i18n::t(lang, i18n::Key::Write)).size(11.5),
             ]
-            .spacing(6)
+            .spacing(5)
             .align_y(Alignment::Center),
         ))
         .on_press(Message::SetAppMode(AppMode::Writing))
-        .height(32)
-        .style(write_tab_style)
+        .height(30)
+        .style(if is_writing {
+            tab_active_button_style
+        } else {
+            tab_inactive_button_style
+        })
         .padding(iced::Padding {
-            left: 12.0,
-            right: 12.0,
+            left: 10.0,
+            right: 10.0,
             ..Default::default()
         });
 
         let is_whiteboard = self.app_mode == AppMode::Whiteboard;
-        let board_tab_style = if is_whiteboard {
-            tab_active_button_style
-        } else {
-            tab_inactive_button_style
-        };
         let btn_board = button(center(
             row![
                 render_svg_icon(
                     SVG_WHITEBOARD,
-                    15,
+                    16,
                     if is_whiteboard { accent } else { TEXT_MUTED }
                 ),
-                text(i18n::t(lang, i18n::Key::Whiteboard)).size(12.5),
+                text(i18n::t(lang, i18n::Key::Whiteboard)).size(11.5),
             ]
-            .spacing(6)
+            .spacing(5)
             .align_y(Alignment::Center),
         ))
         .on_press(Message::SetAppMode(AppMode::Whiteboard))
-        .height(32)
-        .style(board_tab_style)
-        .padding(iced::Padding {
-            left: 12.0,
-            right: 12.0,
-            ..Default::default()
-        });
-
-        // 2. View Mode Segment: Edit | Split | Preview
-        let btn_mode_edit = button(center(
-            row![
-                render_svg_icon(
-                    SVG_WRITE,
-                    13,
-                    if self.view_mode == ViewMode::Edit {
-                        accent
-                    } else {
-                        TEXT_MUTED
-                    }
-                ),
-                text(i18n::t(lang, i18n::Key::Edit)).size(12),
-            ]
-            .spacing(5)
-            .align_y(Alignment::Center),
-        ))
-        .on_press(Message::SetViewMode(ViewMode::Edit))
-        .height(32)
-        .style(if self.view_mode == ViewMode::Edit {
+        .height(30)
+        .style(if is_whiteboard {
             tab_active_button_style
         } else {
             tab_inactive_button_style
@@ -2905,204 +3196,123 @@ impl Krebs {
             ..Default::default()
         });
 
-        let btn_mode_split = button(center(
-            row![
-                render_svg_icon(
-                    SVG_SPLIT,
-                    13,
-                    if self.view_mode == ViewMode::Split {
-                        accent
-                    } else {
-                        TEXT_MUTED
-                    }
-                ),
-                text(i18n::t(lang, i18n::Key::LiveSplit)).size(12),
-            ]
-            .spacing(5)
-            .align_y(Alignment::Center),
-        ))
-        .on_press(Message::SetViewMode(ViewMode::Split))
-        .height(32)
-        .style(if self.view_mode == ViewMode::Split {
-            tab_active_button_style
-        } else {
-            tab_inactive_button_style
-        })
-        .padding(iced::Padding {
-            left: 10.0,
-            right: 10.0,
-            ..Default::default()
-        });
-
-        let btn_mode_preview = button(center(
-            row![
-                render_svg_icon(
-                    SVG_PREVIEW,
-                    13,
-                    if self.view_mode == ViewMode::Preview {
-                        accent
-                    } else {
-                        TEXT_MUTED
-                    }
-                ),
-                text(i18n::t(lang, i18n::Key::Preview)).size(12),
-            ]
-            .spacing(5)
-            .align_y(Alignment::Center),
-        ))
-        .on_press(Message::SetViewMode(ViewMode::Preview))
-        .height(32)
-        .style(if self.view_mode == ViewMode::Preview {
-            tab_active_button_style
-        } else {
-            tab_inactive_button_style
-        })
-        .padding(iced::Padding {
-            left: 10.0,
-            right: 10.0,
-            ..Default::default()
-        });
-
-        let left_cluster = if self.app_mode == AppMode::Writing {
-            row![
-                with_tooltip(btn_write, i18n::t(lang, i18n::Key::WritingStudio)),
-                with_tooltip(btn_board, i18n::t(lang, i18n::Key::PanelWrite)),
-                Space::with_width(8),
-                with_tooltip(btn_mode_edit, i18n::t(lang, i18n::Key::DescViews)),
-                with_tooltip(btn_mode_split, i18n::t(lang, i18n::Key::DescViews)),
-                with_tooltip(btn_mode_preview, i18n::t(lang, i18n::Key::DescViews)),
-            ]
-        } else {
-            row![
-                with_tooltip(btn_write, i18n::t(lang, i18n::Key::WritingStudio)),
-                with_tooltip(btn_board, i18n::t(lang, i18n::Key::PanelWrite)),
-            ]
-        }
-        .spacing(4)
-        .align_y(Alignment::Center);
-
-        // 3. Central Draggable Title Area with Blue Crab Logo
-        let title_text = match self.app_mode {
-            AppMode::Writing => "Krebs Studio",
-            AppMode::Whiteboard => "Krebs Studio — Whiteboard",
-        };
-        let drag_center = mouse_area(
-            container(
+        // ---- 2. View mode chips (Edit / Split / Preview) --------------------
+        let view_chip = |mode: ViewMode, icon: &'static [u8], label: &'static str| {
+            let active = self.view_mode == mode;
+            button(center(
                 row![
-                    render_svg_icon(SVG_TOUR, 14, accent),
-                    text(title_text)
-                        .size(12)
-                        .color(Color::from_rgba(1.0, 1.0, 1.0, 0.45)),
+                    render_svg_icon(icon, 15, if active { accent } else { TEXT_MUTED }),
+                    text(label).size(11),
                 ]
-                .spacing(6)
+                .spacing(4)
                 .align_y(Alignment::Center),
-            )
-            .center_x(Length::Fill)
-            .width(Length::Fill),
+            ))
+            .on_press(Message::SetViewMode(mode))
+            .height(30)
+            .style(if active {
+                tab_active_button_style
+            } else {
+                tab_inactive_button_style
+            })
+            .padding(iced::Padding {
+                left: 8.0,
+                right: 8.0,
+                ..Default::default()
+            })
+        };
+
+        let make_separator = || container(Space::with_height(18))
+            .width(1)
+            .style(|_t| container::Style {
+                background: Some(iced::Background::Color(BORDER_COLOR)),
+                ..Default::default()
+            });
+
+        let mut left_cluster = row![logo_mark, make_separator(), btn_write, btn_board].spacing(4);
+        if self.app_mode == AppMode::Writing {
+            left_cluster = left_cluster
+                .push(make_separator())
+                .push(with_tooltip(
+                    view_chip(ViewMode::Edit, SVG_WRITE, i18n::t(lang, i18n::Key::Edit)),
+                    i18n::t(lang, i18n::Key::DescViews),
+                ))
+                .push(with_tooltip(
+                    view_chip(ViewMode::Split, SVG_SPLIT, i18n::t(lang, i18n::Key::LiveSplit)),
+                    i18n::t(lang, i18n::Key::SplitPresets),
+                ))
+                .push(with_tooltip(
+                    view_chip(ViewMode::Preview, SVG_PREVIEW, i18n::t(lang, i18n::Key::Preview)),
+                    i18n::t(lang, i18n::Key::DescViews),
+                ));
+        }
+        let left_cluster = left_cluster.align_y(Alignment::Center);
+
+        // ---- 3. Draggable center (window drag) -------------------------------
+        let drag_center = mouse_area(
+            container(Space::new(Length::Fill, Length::Fill))
+                .center_x(Length::Fill)
+                .width(Length::Fill),
         )
         .on_press(Message::WindowDrag);
 
-        // 4. Right Utilities & Tools (Hermes AI, Width, Font, Clock, Zen Hide, Window controls)
-        let is_ai_open =
-            self.config.show_right_drawer && self.right_drawer_tab == RightDrawerTab::AiCoach;
-        let agent_label = format!(
-            "✨ {}: {} ▼",
-            i18n::t(lang, i18n::Key::Agent),
-            self.ai_state.provider.label()
+        // ---- 4. Utilities ----------------------------------------------------
+        let agent_connected = self.agent.test_status.as_ref().map(|(ok, _)| *ok) == Some(true);
+        let btn_agent = button(center(
+            row![
+                render_svg_icon(SVG_ROBOT, 16, Color::WHITE),
+                text(format!(
+                    "{} · {}",
+                    i18n::t(lang, i18n::Key::Agent),
+                    self.ai_state.provider.label()
+                ))
+                .size(11.5)
+                .color(Color::WHITE),
+                if agent_connected {
+                    text("●").size(9).color(ACCENT_GREEN)
+                } else {
+                    text("").size(9)
+                },
+            ]
+            .spacing(5)
+            .align_y(Alignment::Center),
+        ))
+        .on_press(Message::ToggleAgentModal)
+        .height(30)
+        .style(accent_button_style)
+        .padding(iced::Padding {
+            left: 10.0,
+            right: 10.0,
+            ..Default::default()
+        });
+
+        let icon_btn = |svg: &'static [u8], size: u16, msg: Message| {
+            button(center(render_svg_icon(svg, size, TEXT_MUTED)))
+                .on_press(msg)
+                .width(28)
+                .height(28)
+                .style(rail_button_style)
+        };
+
+        let btn_font = with_tooltip(
+            icon_btn(SVG_FONT, 17, Message::ToggleFontModal),
+            i18n::t(lang, i18n::Key::Typeface),
         );
-        let btn_ai = button(center(
-            row![
-                render_svg_icon(SVG_ROBOT, 14, if is_ai_open { accent } else { ACCENT_CYAN }),
-                text(agent_label)
-                    .size(12)
-                    .color(if is_ai_open { accent } else { TEXT_PRIMARY }),
-            ]
-            .spacing(5)
-            .align_y(Alignment::Center),
-        ))
-        .on_press(Message::ToggleAiDrawer)
-        .height(32)
-        .style(if is_ai_open {
-            tab_active_button_style
-        } else {
-            rail_button_style
-        })
-        .padding(iced::Padding {
-            left: 10.0,
-            right: 10.0,
-            ..Default::default()
-        });
-
-        let maybe_split_pill =
-            if self.app_mode == AppMode::Writing && self.view_mode == ViewMode::Split {
-                let pct = (self.config.split_ratio * 100.0).round() as u16;
-                Some(
-                    button(center(
-                        row![
-                            render_svg_icon(SVG_SPLIT, 12, ACCENT_CYAN),
-                            text(format!(
-                                "{} {}:{}",
-                                i18n::t(lang, i18n::Key::Split),
-                                pct,
-                                100 - pct
-                            ))
-                            .size(11.5)
-                            .color(TEXT_PRIMARY),
-                        ]
-                        .spacing(4)
-                        .align_y(Alignment::Center),
-                    ))
-                    .on_press(Message::CycleSplitPresets)
-                    .height(32)
-                    .style(rail_button_style)
-                    .padding(iced::Padding {
-                        left: 9.0,
-                        right: 9.0,
-                        ..Default::default()
-                    }),
-                )
-            } else {
-                None
-            };
-
-        let btn_width = button(center(
-            row![
-                render_svg_icon(SVG_WIDTH, 13, TEXT_MUTED),
-                text(match self.canvas_width_mode {
-                    CanvasWidthMode::Standard => i18n::t(lang, i18n::Key::WidthStandard),
-                    CanvasWidthMode::Wide => i18n::t(lang, i18n::Key::WidthWide),
-                    CanvasWidthMode::Full => i18n::t(lang, i18n::Key::WidthFull),
-                })
-                .size(12),
-            ]
-            .spacing(5)
-            .align_y(Alignment::Center),
-        ))
-        .on_press(Message::CycleWidthMode)
-        .height(32)
-        .style(rail_button_style)
-        .padding(iced::Padding {
-            left: 10.0,
-            right: 10.0,
-            ..Default::default()
-        });
-
-        let btn_font = button(center(
-            row![
-                render_svg_icon(SVG_FONT, 13, TEXT_MUTED),
-                text(self.font_choice.display_name()).size(12),
-            ]
-            .spacing(5)
-            .align_y(Alignment::Center),
-        ))
-        .on_press(Message::ToggleFontModal)
-        .height(32)
-        .style(rail_button_style)
-        .padding(iced::Padding {
-            left: 10.0,
-            right: 10.0,
-            ..Default::default()
-        });
+        let btn_theme = with_tooltip(
+            icon_btn(SVG_THEME, 17, Message::ToggleThemeModal),
+            i18n::t(lang, i18n::Key::ThemeSelect),
+        );
+        let btn_lang = with_tooltip(
+            icon_btn(SVG_GLOBE, 17, Message::ToggleLangModal),
+            i18n::t(lang, i18n::Key::LanguageTitle),
+        );
+        let btn_help = with_tooltip(
+            icon_btn(SVG_HELP, 16, Message::ToggleTourModal),
+            i18n::t(lang, i18n::Key::TourHelp),
+        );
+        let btn_zen_hide = with_tooltip(
+            icon_btn(SVG_EYE, 17, Message::ToggleTopToolbar),
+            i18n::t(lang, i18n::Key::ZenHide),
+        );
 
         let mins = self.timer_remaining_secs / 60;
         let secs = self.timer_remaining_secs % 60;
@@ -3112,146 +3322,85 @@ impl Krebs {
         } else {
             TEXT_MUTED
         };
-
         let btn_clock = button(center(
             row![
-                render_svg_icon(SVG_TIMER, 13, clock_color),
-                text(clock_str).size(12).color(clock_color),
+                render_svg_icon(SVG_TIMER, 14, clock_color),
+                text(clock_str).size(11).color(clock_color),
             ]
-            .spacing(5)
+            .spacing(4)
             .align_y(Alignment::Center),
         ))
         .on_press(Message::ZenTimerToggle)
-        .height(32)
+        .height(30)
         .style(rail_button_style)
         .padding(iced::Padding {
-            left: 10.0,
-            right: 10.0,
+            left: 8.0,
+            right: 8.0,
             ..Default::default()
         });
 
-        let btn_clock_presets = button(center(render_svg_icon(SVG_CHEVRON_DOWN, 11, TEXT_MUTED)))
-            .on_press(Message::ZenTimerTogglePresets)
-            .width(32)
-            .height(32)
-            .style(rail_button_style);
+        let btn_clock_presets = with_tooltip(
+            button(center(render_svg_icon(SVG_CHEVRON_DOWN, 11, TEXT_MUTED)))
+                .on_press(Message::ZenTimerTogglePresets)
+                .width(24)
+                .height(28)
+                .style(rail_button_style),
+            i18n::t(lang, i18n::Key::TimerPresets),
+        );
 
-        let btn_lang = button(center(render_svg_icon(SVG_GLOBE, 15, TEXT_MUTED)))
-            .on_press(Message::ToggleLangModal)
-            .width(32)
-            .height(32)
-            .style(rail_button_style);
-
-        let btn_theme = button(center(render_svg_icon(SVG_THEME, 15, TEXT_MUTED)))
-            .on_press(Message::ToggleThemeModal)
-            .width(32)
-            .height(32)
-            .style(rail_button_style);
-
-        let btn_tour = button(center(render_svg_icon(SVG_TOUR, 15, TEXT_MUTED)))
-            .on_press(Message::ToggleTourModal)
-            .width(32)
-            .height(32)
-            .style(rail_button_style);
-
-        let btn_zen_hide = button(center(render_svg_icon(SVG_EYE, 15, TEXT_MUTED)))
-            .on_press(Message::ToggleTopToolbar)
-            .width(32)
-            .height(32)
-            .style(rail_button_style);
-
+        // Window controls with resize support
         let btn_min = button(center(render_svg_icon(SVG_MINIMIZE, 13, TEXT_MUTED)))
             .on_press(Message::WindowMinimize)
             .style(rail_button_style)
-            .width(32)
-            .height(32);
-
+            .width(28)
+            .height(28);
         let btn_max = button(center(render_svg_icon(SVG_FULLSCREEN, 13, TEXT_MUTED)))
             .on_press(Message::WindowToggleMaximize)
             .style(rail_button_style)
-            .width(32)
-            .height(32);
-
-        let btn_close = button(center(render_svg_icon(SVG_CLOSE, 13, TEXT_MUTED)))
+            .width(28)
+            .height(28);
+        let btn_close = button(center(render_svg_icon(SVG_CLOSE, 14, TEXT_MUTED)))
             .on_press(Message::WindowClose)
             .style(rail_button_style)
-            .width(32)
-            .height(32);
+            .width(28)
+            .height(28);
 
-        let mut right_cluster = row![with_tooltip(btn_ai, i18n::t(lang, i18n::Key::AgentDrawer))];
-        if let Some(split_pill) = maybe_split_pill {
-            right_cluster = right_cluster.push(with_tooltip(
-                split_pill,
-                i18n::t(lang, i18n::Key::SplitPresets),
-            ));
-        }
+        let mut right_cluster = row![btn_agent, Space::with_width(4)]
+            .spacing(3)
+            .align_y(Alignment::Center);
         right_cluster = right_cluster
-            .push(with_tooltip(
-                btn_width,
-                i18n::t(lang, i18n::Key::CycleWidth),
-            ))
-            .push(with_tooltip(btn_font, i18n::t(lang, i18n::Key::Typeface)))
-            .push(with_tooltip(
-                btn_clock,
-                i18n::t(lang, i18n::Key::FocusTimer),
-            ))
-            .push(with_tooltip(
-                btn_clock_presets,
-                i18n::t(lang, i18n::Key::TimerPresets),
-            ))
-            .push(with_tooltip(
-                btn_lang,
-                i18n::t(lang, i18n::Key::LanguageTitle),
-            ))
-            .push(with_tooltip(
-                btn_theme,
-                i18n::t(lang, i18n::Key::ThemeSelect),
-            ))
-            .push(with_tooltip(btn_tour, i18n::t(lang, i18n::Key::TourHelp)))
-            .push(with_tooltip(
-                btn_zen_hide,
-                i18n::t(lang, i18n::Key::ZenHide),
-            ))
-            .push(Space::with_width(6))
+            .push(btn_font)
+            .push(btn_theme)
+            .push(btn_lang)
+            .push(btn_clock)
+            .push(btn_clock_presets)
+            .push(btn_help)
+            .push(btn_zen_hide)
+            .push(Space::with_width(4))
             .push(with_tooltip(btn_min, i18n::t(lang, i18n::Key::MinimizeWin)))
             .push(with_tooltip(btn_max, i18n::t(lang, i18n::Key::MaximizeWin)))
-            .push(with_tooltip(btn_close, i18n::t(lang, i18n::Key::CloseWin)))
-            .spacing(4)
-            .align_y(Alignment::Center);
+            .push(with_tooltip(btn_close, i18n::t(lang, i18n::Key::CloseWin)));
 
         if self.show_timer_presets {
-            let p15 = button(center(text("15m").size(10.5)))
-                .on_press(Message::ZenTimerSet(900))
-                .height(32)
-                .style(rail_button_style)
-                .padding(iced::Padding::new(6.0));
-            let p25 = button(center(text("25m").size(10.5)))
-                .on_press(Message::ZenTimerSet(1500))
-                .height(32)
-                .style(rail_button_style)
-                .padding(iced::Padding::new(6.0));
-            let p45 = button(center(text("45m").size(10.5)))
-                .on_press(Message::ZenTimerSet(2700))
-                .height(32)
-                .style(rail_button_style)
-                .padding(iced::Padding::new(6.0));
-            let p60 = button(center(text("60m").size(10.5)))
-                .on_press(Message::ZenTimerSet(3600))
-                .height(32)
-                .style(rail_button_style)
-                .padding(iced::Padding::new(6.0));
+            let preset = |label: &'static str, secs: u64| {
+                button(center(text(label).size(10.5)))
+                    .on_press(Message::ZenTimerSet(secs))
+                    .height(28)
+                    .style(rail_button_style)
+                    .padding(iced::Padding::new(6.0))
+            };
             let rst = button(center(render_svg_icon(SVG_RESET, 12, TEXT_MUTED)))
                 .on_press(Message::Sidebar(SidebarAction::TimerReset))
-                .width(32)
-                .height(32)
+                .width(26)
+                .height(28)
                 .style(rail_button_style);
 
             right_cluster = right_cluster.push(
                 row![
-                    with_tooltip(p15, i18n::t(lang, i18n::Key::Focus15)),
-                    with_tooltip(p25, i18n::t(lang, i18n::Key::Focus25)),
-                    with_tooltip(p45, i18n::t(lang, i18n::Key::Focus45)),
-                    with_tooltip(p60, i18n::t(lang, i18n::Key::Focus60)),
+                    with_tooltip(preset("15m", 900), i18n::t(lang, i18n::Key::Focus15)),
+                    with_tooltip(preset("25m", 1500), i18n::t(lang, i18n::Key::Focus25)),
+                    with_tooltip(preset("45m", 2700), i18n::t(lang, i18n::Key::Focus45)),
+                    with_tooltip(preset("60m", 3600), i18n::t(lang, i18n::Key::Focus60)),
                     with_tooltip(rst, i18n::t(lang, i18n::Key::ResetTimer)),
                 ]
                 .spacing(2)
@@ -3259,17 +3408,17 @@ impl Krebs {
             );
         }
 
-        let header_row = row![left_cluster, drag_center, right_cluster,]
+        let header_row = row![left_cluster, drag_center, right_cluster]
             .width(Length::Fill)
             .align_y(Alignment::Center);
 
         container(header_row)
             .width(Length::Fill)
             .padding(iced::Padding {
-                top: 3.5,
-                bottom: 3.5,
-                left: 10.0,
-                right: 10.0,
+                top: 4.0,
+                bottom: 4.0,
+                left: 8.0,
+                right: 8.0,
             })
             .style(|_t| container::Style {
                 background: Some(iced::Background::Color(RAIL_BG)),
@@ -3280,6 +3429,448 @@ impl Krebs {
                 },
                 ..Default::default()
             })
+            .into()
+    }
+
+    /// Centered Agent Studio: connect a model and direct it as a language teacher.
+    fn view_agent_modal<'a>(&'a self) -> Element<'a, Message> {
+        let lang = self.lang();
+        let accent = self.accent_choice.color();
+
+        let (status_text, status_color) = match self.agent.test_status.as_ref() {
+            Some((true, _)) => (i18n::t(lang, i18n::Key::Connected), ACCENT_GREEN),
+            Some((false, _)) => (i18n::t(lang, i18n::Key::NotConnected), ACCENT_RED),
+            None => (i18n::t(lang, i18n::Key::NotConnected), TEXT_MUTED),
+        };
+
+        let close_btn = button(center(render_svg_icon(SVG_CLOSE, 14, TEXT_MUTED)))
+            .on_press(Message::CloseAgentModal)
+            .style(rail_button_style)
+            .width(30)
+            .height(30);
+
+        let title_row = row![
+            render_svg_icon(SVG_CRAB, 22, accent),
+            column![
+                text(i18n::t(lang, i18n::Key::AgentStudio))
+                    .size(15)
+                    .color(TEXT_PRIMARY),
+                text(format!(
+                    "{} · {}",
+                    self.ai_state.provider.full_name(),
+                    status_text
+                ))
+                .size(10)
+                .color(status_color),
+            ]
+            .spacing(2),
+            Space::with_width(Length::Fill),
+            close_btn,
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center);
+
+        // ---- Connection column ----------------------------------------------
+        let mut provider_row = row![].spacing(4);
+        for provider in AiProvider::all() {
+            let selected = self.ai_state.provider == *provider;
+            provider_row = provider_row.push(
+                button(
+                    text(provider.label())
+                        .size(10.5)
+                        .color(if selected { accent } else { TEXT_PRIMARY }),
+                )
+                .on_press(Message::SelectAiProvider(*provider))
+                .style(if selected {
+                    tab_active_button_style
+                } else {
+                    rail_button_style
+                })
+                .padding(iced::Padding {
+                    top: 4.0,
+                    bottom: 4.0,
+                    left: 7.0,
+                    right: 7.0,
+                }),
+            );
+        }
+
+        let mut connect_col = column![
+            text(i18n::t(lang, i18n::Key::Connect))
+                .size(10)
+                .color(TEXT_MUTED),
+            provider_row.wrap(),
+            text(format!(
+                "{}  ·  {}  ·  {}",
+                self.ai_state.provider.default_endpoint(),
+                self.ai_state.provider.default_model(),
+                if self.ai_state.provider.requires_api_key() {
+                    "API key required"
+                } else {
+                    "local · no key"
+                }
+            ))
+            .size(9.5)
+            .color(TEXT_MUTED),
+            text(i18n::t(lang, i18n::Key::AiEndpoint))
+                .size(10)
+                .color(TEXT_MUTED),
+            text_input("http://localhost:11434/v1", &self.ai_state.temp_endpoint)
+                .on_input(Message::AiSetEndpoint)
+                .size(11.5)
+                .style(text_input_style)
+                .padding(7),
+            text(i18n::t(lang, i18n::Key::ModelName))
+                .size(10)
+                .color(TEXT_MUTED),
+            text_input("hermes3", &self.ai_state.temp_model)
+                .on_input(Message::AiSetModel)
+                .size(11.5)
+                .style(text_input_style)
+                .padding(7),
+        ]
+        .spacing(6);
+
+        if self.ai_state.provider.requires_api_key() {
+            connect_col = connect_col
+                .push(
+                    text(i18n::t(lang, i18n::Key::ApiKey))
+                        .size(10)
+                        .color(TEXT_MUTED),
+                )
+                .push(
+                    text_input("sk-…", &self.ai_state.api_key)
+                        .on_input(Message::AiApiKeyChanged)
+                        .secure(true)
+                        .size(11.5)
+                        .style(text_input_style)
+                        .padding(7),
+                );
+        }
+
+        let test_btn = if self.agent.is_testing {
+            button(center(text("⏳ …").size(11)))
+                .style(rail_button_style)
+                .padding(iced::Padding {
+                    top: 6.0,
+                    bottom: 6.0,
+                    left: 12.0,
+                    right: 12.0,
+                })
+        } else {
+            button(center(
+                row![
+                    render_svg_icon(SVG_KEY, 14, accent),
+                    text(i18n::t(lang, i18n::Key::Connect))
+                        .size(11.5)
+                        .color(accent),
+                ]
+                .spacing(6)
+                .align_y(Alignment::Center),
+            ))
+            .on_press(Message::AgentTestConnection)
+            .style(tab_active_button_style)
+            .padding(iced::Padding {
+                top: 6.0,
+                bottom: 6.0,
+                left: 12.0,
+                right: 12.0,
+            })
+        };
+
+        let status_line: Element<'a, Message> = match self.agent.test_status.as_ref() {
+            Some((ok, detail)) => text(format!("{} {detail}", if *ok { "✓" } else { "✗" }))
+                .size(9.5)
+                .color(if *ok { ACCENT_GREEN } else { ACCENT_RED })
+                .into(),
+            None => text("Ollama runs fully offline: ollama run hermes3")
+                .size(9.5)
+                .color(TEXT_MUTED)
+                .into(),
+        };
+
+        let connect_col = connect_col
+            .push(row![test_btn].spacing(6))
+            .push(status_line);
+
+        let connect_col = column![
+            connect_col,
+            Space::with_height(Length::Fill),
+            text(
+                "Replies arrive in one piece, and nothing leaves your machine \
+                 unless you pick a cloud model."
+            )
+            .size(9)
+            .color(TEXT_MUTED),
+        ]
+        .spacing(8);
+
+        // ---- Language teacher column ----------------------------------------
+        let mut level_row = row![].spacing(4);
+        for level in ["A1", "A2", "B1", "B2", "C1", "C2"] {
+            let selected = self.config.tutor_level == level;
+            level_row = level_row.push(
+                button(
+                    text(level)
+                        .size(10.5)
+                        .color(if selected { accent } else { TEXT_PRIMARY }),
+                )
+                .on_press(Message::TutorSetLevel(level.to_string()))
+                .style(if selected {
+                    tab_active_button_style
+                } else {
+                    rail_button_style
+                })
+                .padding(iced::Padding {
+                    top: 3.0,
+                    bottom: 3.0,
+                    left: 8.0,
+                    right: 8.0,
+                }),
+            );
+        }
+
+        let instruction = self.tutor_profile().instruction();
+        let instruction_box =
+            container(scrollable(text(instruction).size(10).color(TEXT_PRIMARY)).height(120))
+                .padding(8)
+                .width(Length::Fill)
+                .style(card_container_style);
+
+        let copy_instruction_btn = button(center(
+            row![
+                render_svg_icon(SVG_CHECK, 12, TEXT_MUTED),
+                text(i18n::t(lang, i18n::Key::CopyInstruction)).size(10.5),
+            ]
+            .spacing(5)
+            .align_y(Alignment::Center),
+        ))
+        .on_press(Message::CopyTeacherInstruction)
+        .style(rail_button_style)
+        .padding(iced::Padding {
+            top: 4.0,
+            bottom: 4.0,
+            left: 8.0,
+            right: 8.0,
+        });
+
+        let ask_btn = if self.agent.is_running {
+            button(center(text("⏳").size(12)))
+                .style(rail_button_style)
+                .padding(8)
+        } else {
+            button(center(
+                row![
+                    render_svg_icon(SVG_AI, 14, ACCENT_GREEN),
+                    text(i18n::t(lang, i18n::Key::AskTeacher))
+                        .size(11)
+                        .color(ACCENT_GREEN),
+                ]
+                .spacing(6)
+                .align_y(Alignment::Center),
+            ))
+            .on_press(Message::TutorAsk)
+            .style(rail_button_style)
+            .padding(8)
+        };
+
+        let teacher_col = column![
+            text(i18n::t(lang, i18n::Key::LanguageTeacher))
+                .size(10)
+                .color(TEXT_MUTED),
+            text(i18n::t(lang, i18n::Key::TargetLanguage))
+                .size(10)
+                .color(TEXT_MUTED),
+            text_input(
+                "German, English, Persian, Spanish…",
+                &self.config.tutor_language
+            )
+            .on_input(Message::TutorSetLanguage)
+            .size(11.5)
+            .style(text_input_style)
+            .padding(7),
+            text(i18n::t(lang, i18n::Key::Level))
+                .size(10)
+                .color(TEXT_MUTED),
+            level_row,
+            text(i18n::t(lang, i18n::Key::Goal))
+                .size(10)
+                .color(TEXT_MUTED),
+            text_input(
+                "Pass the B2 exam, write clearer emails, speak with confidence…",
+                &self.config.tutor_goal,
+            )
+            .on_input(Message::TutorSetGoal)
+            .size(11.5)
+            .style(text_input_style)
+            .padding(7),
+            row![ask_btn, copy_instruction_btn]
+                .spacing(6)
+                .align_y(Alignment::Center),
+            text(i18n::t(lang, i18n::Key::TeacherInstruction))
+                .size(10)
+                .color(TEXT_MUTED),
+            instruction_box,
+        ]
+        .spacing(6);
+
+        let mut body = column![
+            row![
+                container(connect_col)
+                    .width(Length::FillPortion(44))
+                    .padding(12)
+                    .style(card_container_style),
+                container(teacher_col)
+                    .width(Length::FillPortion(56))
+                    .padding(12)
+                    .style(card_container_style),
+            ]
+            .spacing(12)
+            .align_y(Alignment::Start),
+        ]
+        .spacing(10);
+
+        if !self.agent.result.is_empty() {
+            let result_actions = row![
+                button(center(
+                    row![
+                        render_svg_icon(SVG_CHECK, 12, TEXT_MUTED),
+                        text(i18n::t(lang, i18n::Key::CopyFeedback)).size(10.5),
+                    ]
+                    .spacing(5)
+                    .align_y(Alignment::Center),
+                ))
+                .on_press(Message::CopyTutorResult)
+                .style(rail_button_style)
+                .padding(6),
+                button(center(
+                    row![
+                        render_svg_icon(SVG_WRITE, 12, TEXT_MUTED),
+                        text(i18n::t(lang, i18n::Key::InsertAtCursor)).size(10.5),
+                    ]
+                    .spacing(5)
+                    .align_y(Alignment::Center),
+                ))
+                .on_press(Message::InsertTutorFeedback)
+                .style(rail_button_style)
+                .padding(6),
+            ]
+            .spacing(6);
+
+            body = body.push(
+                column![
+                    row![
+                        text(i18n::t(lang, i18n::Key::LanguageTeacher))
+                            .size(10)
+                            .color(TEXT_MUTED),
+                        Space::with_width(Length::Fill),
+                        result_actions,
+                    ]
+                    .align_y(Alignment::Center),
+                    container(
+                        scrollable(text(&self.agent.result).size(11).color(TEXT_PRIMARY)).height(200),
+                    )
+                    .padding(10)
+                    .width(Length::Fill)
+                    .style(card_container_style),
+                ]
+                .spacing(6),
+            );
+        }
+
+        // ---- Quick checks on the current note --------------------------------
+        let quick_chip = |action: AiAction| {
+            let active = self.ai_state.last_action == Some(action) && !self.ai_state.is_loading;
+            button(
+                text(action.title())
+                    .size(10.5)
+                    .color(if active { accent } else { TEXT_PRIMARY }),
+            )
+            .on_press(Message::RunAiAction(action))
+            .style(if active {
+                tab_active_button_style
+            } else {
+                rail_button_style
+            })
+            .padding(iced::Padding {
+                top: 4.0,
+                bottom: 4.0,
+                left: 8.0,
+                right: 8.0,
+            })
+        };
+
+        body = body.push(
+            column![
+                text("Quick checks on this note")
+                    .size(10)
+                    .color(TEXT_MUTED),
+                row![
+                    quick_chip(AiAction::GradeEssay),
+                    quick_chip(AiAction::TipsAndFeedback),
+                    quick_chip(AiAction::FixGrammar),
+                    quick_chip(AiAction::GermanB2C1),
+                ]
+                .spacing(6)
+                .wrap(),
+            ]
+            .spacing(6),
+        );
+
+        if self.ai_state.is_loading {
+            body = body.push(
+                text("✨ Analyzing your note…")
+                    .size(11)
+                    .color(accent),
+            );
+        } else if !self.ai_state.response_text.is_empty() {
+            body = body.push(
+                column![
+                    row![
+                        text(if self.ai_state.is_offline_fallback {
+                            "Offline evaluator"
+                        } else {
+                            "Agent response"
+                        })
+                        .size(10)
+                        .color(if self.ai_state.is_offline_fallback {
+                            ACCENT_AMBER
+                        } else {
+                            ACCENT_GREEN
+                        }),
+                        Space::with_width(Length::Fill),
+                        button(text(i18n::t(lang, i18n::Key::CopyFeedback)).size(10.5))
+                            .on_press(Message::AiCopyFeedback)
+                            .style(rail_button_style)
+                            .padding(4),
+                        button(text(i18n::t(lang, i18n::Key::InsertAtCursor)).size(10.5))
+                            .on_press(Message::AiInsertFeedback)
+                            .style(rail_button_style)
+                            .padding(4),
+                    ]
+                    .align_y(Alignment::Center)
+                    .spacing(6),
+                    container(
+                        scrollable(
+                            text(&self.ai_state.response_text)
+                                .size(11)
+                                .color(TEXT_PRIMARY),
+                        )
+                        .height(180),
+                    )
+                    .padding(10)
+                    .width(Length::Fill)
+                    .style(card_container_style),
+                ]
+                .spacing(6),
+            );
+        }
+
+        container(column![title_row, create_divider_simple(), body].spacing(12))
+            .width(760)
+            .max_height(640)
+            .padding(18)
+            .style(modal_container_style)
             .into()
     }
 
@@ -3667,11 +4258,45 @@ impl Krebs {
         ]
         .align_y(Alignment::Center);
 
+        // Body text size, applied before zoom.
+        let size_value = self.config.font_size.round() as u32;
+        let size_row = row![
+            text(i18n::t(lang, i18n::Key::TextSize))
+                .size(10)
+                .color(TEXT_MUTED),
+            Space::with_width(Length::Fill),
+            button(center(text("A−").size(12)))
+                .on_press(Message::AdjustFontSize(-1.0))
+                .style(rail_button_style)
+                .width(34)
+                .height(28),
+            text(format!("{size_value} px"))
+                .size(12)
+                .color(TEXT_PRIMARY),
+            button(center(text("A+").size(12)))
+                .on_press(Message::AdjustFontSize(1.0))
+                .style(rail_button_style)
+                .width(34)
+                .height(28),
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center);
+
         let font_items = [
             (
                 FontChoice::JetBrainsMono,
                 "JetBrains Mono",
                 i18n::t(lang, i18n::Key::FontDescJetBrains),
+            ),
+            (
+                FontChoice::Inter,
+                "Inter",
+                i18n::t(lang, i18n::Key::FontDescSans),
+            ),
+            (
+                FontChoice::Lora,
+                "Lora",
+                i18n::t(lang, i18n::Key::FontDescSerif),
             ),
             (
                 FontChoice::IbmPlexMono,
@@ -3700,40 +4325,62 @@ impl Krebs {
             ),
         ];
 
-        let mut font_list = column![title_row, Space::with_height(8)].spacing(8);
-
+        let mut font_list = column![].spacing(4);
         for (choice, name, desc) in font_items {
             let is_selected = self.font_choice == choice;
-            let card_style = if is_selected {
+            let item_btn = button(
+                row![
+                    container(
+                        text("Aa")
+                            .font(choice.to_font())
+                            .size(19)
+                            .color(if is_selected { ACCENT_CYAN } else { TEXT_PRIMARY })
+                    )
+                    .width(40),
+                    column![
+                        text(name).size(12.5).color(if is_selected {
+                            ACCENT_CYAN
+                        } else {
+                            TEXT_PRIMARY
+                        }),
+                        text(desc).size(9.5).color(TEXT_MUTED),
+                    ]
+                    .spacing(1),
+                    Space::with_width(Length::Fill),
+                    if is_selected {
+                        render_svg_icon(SVG_CHECK, 13, ACCENT_CYAN)
+                    } else {
+                        render_svg_icon(SVG_CHEVRON_DOWN, 13, Color::TRANSPARENT)
+                    },
+                ]
+                .spacing(10)
+                .align_y(Alignment::Center),
+            )
+            .on_press(Message::SelectFont(choice))
+            .style(if is_selected {
                 active_tool_button_style
             } else {
                 rail_button_style
-            };
-
-            let item_btn = button(
-                column![
-                    text(name).size(13).color(if is_selected {
-                        ACCENT_CYAN
-                    } else {
-                        TEXT_PRIMARY
-                    }),
-                    text(desc).size(10).color(TEXT_MUTED),
-                ]
-                .spacing(2),
-            )
-            .on_press(Message::SelectFont(choice))
-            .style(card_style)
-            .padding(10)
+            })
+            .padding(8)
             .width(Length::Fill);
 
             font_list = font_list.push(item_btn);
         }
 
-        container(font_list)
-            .width(460)
-            .padding(18)
-            .style(modal_container_style)
-            .into()
+        container(
+            column![
+                title_row,
+                size_row,
+                create_divider_simple(),
+                scrollable(font_list).height(Length::Fixed(380.0)),
+            ]
+            .spacing(10),
+        )
+        .width(520)
+        .padding(18)
+        .style(modal_container_style)
+        .into()
     }
 
     fn view_shortcuts_modal<'a>(&self) -> Element<'a, Message> {
@@ -4524,6 +5171,8 @@ mod tests {
         let choices = [
             (FontChoice::JetBrainsMono, "jetbrains_mono"),
             (FontChoice::IbmPlexMono, "ibm_plex_mono"),
+            (FontChoice::Inter, "inter"),
+            (FontChoice::Lora, "lora"),
             (FontChoice::Vt323, "vt323"),
             (FontChoice::Vazirmatn, "vazirmatn"),
             (FontChoice::Sans, "sans"),
@@ -4646,13 +5295,25 @@ mod tests {
         let _ = app.update(Message::ToggleTopToolbar);
         assert!(app.show_top_toolbar);
 
-        // 13. Test Hermes AI Drawer toggle and actions
+        // 13. Test the centered Agent Studio and the drawer tabs
         app.config.show_right_drawer = false;
         let _ = app.update(Message::ToggleAiDrawer);
-        assert!(app.config.show_right_drawer);
-        assert_eq!(app.right_drawer_tab, RightDrawerTab::AiCoach);
+        assert!(app.show_agent_modal);
+        let _ = app.update(Message::CloseAgentModal);
+        assert!(!app.show_agent_modal);
         let _ = app.update(Message::SetRightDrawerTab(RightDrawerTab::Redemittel));
         assert_eq!(app.right_drawer_tab, RightDrawerTab::Redemittel);
+        let _ = app.update(Message::SetRightDrawerTab(RightDrawerTab::PromptStudio));
+        assert_eq!(app.right_drawer_tab, RightDrawerTab::PromptStudio);
+
+        // Teacher profile drives a non-empty agent instruction.
+        let _ = app.update(Message::TutorSetLanguage("German".to_string()));
+        let _ = app.update(Message::TutorSetLevel("C1".to_string()));
+        let _ = app.update(Message::TutorSetGoal("debate fluently".to_string()));
+        let instruction = app.tutor_profile().instruction();
+        assert!(instruction.contains("Language Teacher Agent"));
+        assert!(instruction.contains("C1"));
+        assert!(instruction.contains("debate fluently"), "{instruction}");
 
         // 14. Test Offline Essay Evaluator
         let sample_essay = "In der heutigen Zeit ist Bildung von zentraler Bedeutung. Einerseits bietet sie Chancen. Andererseits erfordert sie Fleiss. Zusammenfassend laesst sich sagen, dass Lernen lebenslang ist.";
